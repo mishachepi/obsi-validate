@@ -9,23 +9,23 @@
 
 2. Copy or symlink to your vault:
    ```bash
-   mkdir -p /path/to/vault/.obsidian/plugins/obsi-validate
+   mkdir -p /path/to/vault/.obsidian/plugins/property-validator
    cp plugin/main.js plugin/manifest.json plugin/styles.css \
-      /path/to/vault/.obsidian/plugins/obsi-validate/
+      /path/to/vault/.obsidian/plugins/property-validator/
    ```
 
    Or use symlinks for development:
    ```bash
-   ln -sf $(pwd)/plugin/main.js /path/to/vault/.obsidian/plugins/obsi-validate/main.js
-   ln -sf $(pwd)/plugin/manifest.json /path/to/vault/.obsidian/plugins/obsi-validate/manifest.json
-   ln -sf $(pwd)/plugin/styles.css /path/to/vault/.obsidian/plugins/obsi-validate/styles.css
+   ln -sf $(pwd)/plugin/main.js /path/to/vault/.obsidian/plugins/property-validator/main.js
+   ln -sf $(pwd)/plugin/manifest.json /path/to/vault/.obsidian/plugins/property-validator/manifest.json
+   ln -sf $(pwd)/plugin/styles.css /path/to/vault/.obsidian/plugins/property-validator/styles.css
    ```
 
-3. In Obsidian: Settings -> Community plugins -> Enable "Obsi Validate"
+3. In Obsidian: Settings -> Community plugins -> Enable "Property Validator"
 
 ## Configuration
 
-Settings -> Obsi Validate -> **Settings** tab:
+Settings -> Property Validator -> **Settings** tab:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -57,7 +57,7 @@ Opens in the right sidebar. Shows:
 
 ### Entities Tab
 
-Settings -> Obsi Validate -> **Entities** tab
+Settings -> Property Validator -> **Entities** tab
 
 - Lists all entities grouped by subdirectory (folder shown as tag)
 - Expand to see: properties (with required toggles), allow_extra toggle
@@ -67,7 +67,7 @@ Settings -> Obsi Validate -> **Entities** tab
 
 ### Properties Tab
 
-Settings -> Obsi Validate -> **Properties** tab
+Settings -> Property Validator -> **Properties** tab
 
 - Lists all properties grouped by subdirectory (folder shown as tag)
 - Expand to see: type, constraints (type-specific), custom validator

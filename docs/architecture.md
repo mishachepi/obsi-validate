@@ -55,6 +55,22 @@ plugin/                       # Obsidian plugin
 
 Core accepts `RawFile[] = { path: string, content: string }[]` — who reads the files is irrelevant. CLI uses `fs`, plugin uses Obsidian Vault API.
 
+## Entity Inheritance
+
+Entities support single inheritance via `extends`. The schema loader resolves the full chain and merges properties (parent first, child overrides). Circular dependencies are detected at load time.
+
+```
+base → trackable → structure → task
+                              → epic
+                              → area
+       trackable → rhythm    → day
+                              → sprint
+       trackable → cmdb      → book
+                              → service
+```
+
+Each entity file stores only its **own** properties. The `entityMap` contains the fully resolved set.
+
 ## Entity-Centric Schema
 
 ```mermaid

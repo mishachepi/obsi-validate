@@ -100,12 +100,67 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
     results.push({
       name,
       properties,
+      extends: data.extends ?? undefined,
       allow_extra: data.allow_extra ?? undefined,
       folder,
     });
   }
 
   return results;
+}
+
+type InheritedProps = {
+  properties: Record<string, EntityPropertyConfig>;
+  /** property name → entity name it was inherited from */
+  origins: Map<string, string>;
+};
+
+/** Resolve inheritance chains for all entities */
+function resolveInheritance(
+  entities: EntitySchema[],
+): Map<string, InheritedProps> {
+  const byName = new Map(entities.map((e) => [e.name, e]));
+  const resolved = new Map<string, InheritedProps>();
+
+  function resolve(name: string, visiting: Set<string>): InheritedProps {
+    if (resolved.has(name)) return resolved.get(name)!;
+    if (visiting.has(name)) {
+      throw new Error(`Circular entity inheritance: ${[...visiting, name].join(" → ")}`);
+    }
+    visiting.add(name);
+
+    const entity = byName.get(name);
+    if (!entity) return { properties: {}, origins: new Map() };
+
+    let merged: Record<string, EntityPropertyConfig> = {};
+    let origins = new Map<string, string>();
+
+    // Resolve parent first
+    if (entity.extends) {
+      const parent = resolve(entity.extends, visiting);
+      merged = { ...parent.properties };
+      origins = new Map(parent.origins);
+      // Properties from parent that don't have an origin yet → came from parent
+      for (const key of Object.keys(parent.properties)) {
+        if (!origins.has(key)) origins.set(key, entity.extends);
+      }
+    }
+
+    // Own properties override parent (child's config wins)
+    for (const [key, config] of Object.entries(entity.properties)) {
+      merged[key] = config;
+      origins.delete(key); // own property — not inherited
+    }
+
+    const result = { properties: merged, origins };
+    resolved.set(name, result);
+    return result;
+  }
+
+  for (const entity of entities) {
+    resolve(entity.name, new Set());
+  }
+  return resolved;
 }
 
 /** Build complete VaultSchema from raw file contents */
@@ -117,29 +172,34 @@ export function loadSchema(
   const properties = parseProperties(propertyFiles);
 
   const propByName = new Map(properties.map((p) => [p.name, p]));
+  const inheritance = resolveInheritance(entities);
 
-  // Build entity → resolved properties from entity's properties block
+  // Build entity → resolved properties (with inheritance)
   const entityMap = new Map<string, ResolvedProperty[]>();
   const allowExtraMap = new Map<string, boolean>();
 
   for (const entity of entities) {
+    const inherited = inheritance.get(entity.name);
+    const mergedProps = inherited?.properties ?? entity.properties;
+    const origins = inherited?.origins ?? new Map<string, string>();
     const resolved: ResolvedProperty[] = [];
 
-    for (const [propName, config] of Object.entries(entity.properties)) {
+    for (const [propName, config] of Object.entries(mergedProps)) {
       const propSchema = propByName.get(propName);
+      const inheritedFrom = origins.get(propName);
 
       if (propSchema) {
         resolved.push({
           ...propSchema,
           required: config.required ?? false,
+          inheritedFrom,
         });
       } else {
-        // Property declared in entity but no property file exists
-        // → known field, but no type validation (just presence check for required)
         resolved.push({
           name: propName,
           property_type: "unknown",
           required: config.required ?? false,
+          inheritedFrom,
         });
       }
     }

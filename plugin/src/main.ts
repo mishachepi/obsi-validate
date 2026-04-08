@@ -174,7 +174,7 @@ export default class ObsiValidatePlugin extends Plugin {
     const result = this.lastResult;
 
     if (!result || !result.entityType) {
-      this.statusBarEl.createSpan({ text: "obsi-validate", cls: "obsi-validate-sb-label" });
+      this.statusBarEl.createSpan({ text: "Property Validator", cls: "obsi-validate-sb-label" });
       return;
     }
 
@@ -230,7 +230,7 @@ export default class ObsiValidatePlugin extends Plugin {
       );
     } catch (e) {
       new Notice(
-        `obsi-validate: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
+        `Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
       );
       return;
     }
@@ -254,7 +254,7 @@ export default class ObsiValidatePlugin extends Plugin {
       );
     } catch (e) {
       new Notice(
-        `obsi-validate: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
+        `Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
       );
       return;
     }

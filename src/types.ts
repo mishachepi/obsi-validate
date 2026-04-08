@@ -43,6 +43,8 @@ export type EntitySchema = {
   name: string;
   /** Property name → config (required, etc.) */
   properties: Record<string, EntityPropertyConfig>;
+  /** Parent entity name for inheritance */
+  extends?: string;
   /** If true, extra fields not in properties don't produce warnings */
   allow_extra?: boolean;
   /** Folder relative to entities dir (for UI grouping) */
@@ -52,6 +54,8 @@ export type EntitySchema = {
 /** Resolved property: property schema + per-entity config */
 export type ResolvedProperty = PropertySchema & {
   required: boolean;
+  /** Which entity this property was inherited from (undefined = own) */
+  inheritedFrom?: string;
 };
 
 /** Complete vault schema with derived entity→properties mapping */

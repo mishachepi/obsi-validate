@@ -1,4 +1,4 @@
-export const VIEW_TYPE_RESULTS = "obsi-validate-results";
+export const VIEW_TYPE_RESULTS = "property-validator-results";
 
 export interface PluginSettings {
   schemaDir: string;

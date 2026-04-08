@@ -23,8 +23,13 @@ function yamlScalar(val: string | number): string {
 export function generateEntityFrontmatter(
   allowExtra: boolean,
   properties: Record<string, { required?: boolean }>,
+  extendsEntity?: string,
 ): string {
   const lines: string[] = ["---", "component_type: entity"];
+
+  if (extendsEntity) {
+    lines.push(`extends: ${extendsEntity}`);
+  }
 
   if (allowExtra) {
     lines.push("allow_extra: true");

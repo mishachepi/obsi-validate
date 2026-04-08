@@ -29,11 +29,11 @@ Entity files declare structure -- which fields belong to this type and whether t
 ```yaml
 ---
 component_type: entity
+extends: trackable
 properties:
-  status: { required: true }
-  priority: {}
+  priority: { required: true }
   estimate: {}
-  area: {}
+  dod: {}
 allow_extra: false
 ---
 ```
@@ -42,8 +42,24 @@ allow_extra: false
 |-------|----------|-------------|
 | `component_type` | yes | Must be `entity` |
 | `name` | no | Entity name. Fallback: filename minus `_entity.md` |
-| `properties` | no | Field declarations with optional `{ required: true }` |
+| `extends` | no | Parent entity name for inheritance |
+| `properties` | no | **Own** field declarations with optional `{ required: true }` |
 | `allow_extra` | no | If `true`, unknown fields don't produce warnings (default: `false`) |
+
+### Entity Inheritance
+
+Entities can inherit properties from a parent via `extends`:
+
+```
+base_entity        → type_key (implicit)
+trackable_entity   → extends: base,       properties: {status, created, updated}
+structure_entity   → extends: trackable,  properties: {area, description}
+task_entity        → extends: structure,   properties: {priority, estimate, dod}
+```
+
+`task` gets all 8 properties: 3 own + 2 from structure + 3 from trackable. Child's config overrides parent's (e.g., child can make an inherited property required).
+
+Entities without `extends` work as before — all properties are own. Migration is gradual: add `extends` and remove inherited properties from the `properties` block.
 
 ## Property Files
 

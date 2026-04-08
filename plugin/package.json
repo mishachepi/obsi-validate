@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-obsi-validate",
+  "name": "obsidian-property-validator",
   "version": "0.1.0",
   "private": true,
   "scripts": {

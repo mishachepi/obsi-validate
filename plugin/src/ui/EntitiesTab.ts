@@ -1,5 +1,6 @@
 import { Notice, Setting } from "obsidian";
 import type ObsiValidatePlugin from "../main";
+import type { VaultSchema, ResolvedProperty } from "../../../src/types";
 import {
   ensureSchema,
   writeEntityFile,
@@ -17,7 +18,7 @@ function renderEditablePropList(
   const entries = Object.entries(properties);
   if (entries.length === 0) {
     containerEl.createEl("p", {
-      text: "No properties. Add one below.",
+      text: "No own properties. Add one below.",
       cls: "obsi-validate-placeholder",
     });
     return;
@@ -42,6 +43,42 @@ function renderEditablePropList(
       delete properties[propName];
       renderEditablePropList(containerEl, properties);
     });
+  }
+}
+
+/** Render inherited properties as read-only, grouped by source entity */
+function renderInheritedProps(
+  containerEl: HTMLElement,
+  entityName: string,
+  schema: VaultSchema,
+): void {
+  const resolved = schema.entityMap.get(entityName);
+  if (!resolved) return;
+
+  // Group inherited props by source
+  const inherited = new Map<string, ResolvedProperty[]>();
+  for (const prop of resolved) {
+    if (prop.inheritedFrom) {
+      if (!inherited.has(prop.inheritedFrom)) inherited.set(prop.inheritedFrom, []);
+      inherited.get(prop.inheritedFrom)!.push(prop);
+    }
+  }
+
+  if (inherited.size === 0) return;
+
+  for (const [source, props] of inherited) {
+    const section = containerEl.createDiv({ cls: "obsi-validate-inherited-section" });
+    section.createDiv({
+      text: `Inherited from ${source}`,
+      cls: "obsi-validate-inherited-label",
+    });
+    for (const prop of props) {
+      const row = section.createDiv({ cls: "obsi-validate-prop-row obsi-validate-inherited-row" });
+      row.createSpan({ text: prop.name, cls: "obsi-validate-prop-name" });
+      if (prop.required) {
+        row.createSpan({ text: "required", cls: "obsi-validate-req-badge" });
+      }
+    }
   }
 }
 
@@ -97,53 +134,74 @@ export async function renderEntitiesTab(
       });
     }
     for (const entity of grouped.get(folder)!) {
-      renderEntityItem(listEl, entity, allPropertyNames, plugin);
+      renderEntityItem(listEl, entity, allPropertyNames, schema, plugin);
     }
   }
 
   newBtn.addEventListener("click", () => {
-    renderNewEntityForm(containerEl, listEl, allPropertyNames, plugin);
+    renderNewEntityForm(containerEl, listEl, allPropertyNames, schema, plugin);
   });
 }
 
 function renderEntityItem(
   containerEl: HTMLElement,
-  entity: { name: string; properties: Record<string, { required?: boolean }>; allow_extra?: boolean; folder?: string },
+  entity: { name: string; properties: Record<string, { required?: boolean }>; extends?: string; allow_extra?: boolean; folder?: string },
   allPropertyNames: string[],
+  schema: VaultSchema,
   plugin: ObsiValidatePlugin,
 ): void {
   const details = containerEl.createEl("details", {
     cls: "obsi-validate-schema-item",
   });
 
+  // Count own vs inherited
+  const resolved = schema.entityMap.get(entity.name) ?? [];
+  const ownCount = Object.keys(entity.properties).length;
+  const inheritedCount = resolved.filter((p) => p.inheritedFrom).length;
+  const totalCount = ownCount + inheritedCount;
+
   const summary = details.createEl("summary");
   summary.createSpan({ text: entity.name, cls: "obsi-validate-item-name" });
   if (entity.folder) {
-    summary.createSpan({
-      text: entity.folder,
-      cls: "obsi-validate-folder-badge",
-    });
+    summary.createSpan({ text: entity.folder, cls: "obsi-validate-folder-badge" });
   }
-  const propCount = Object.keys(entity.properties).length;
+  if (entity.extends) {
+    summary.createSpan({ text: `\u2190 ${entity.extends}`, cls: "obsi-validate-extends-badge" });
+  }
   summary.createSpan({
-    text: `${propCount} props`,
+    text: inheritedCount > 0 ? `${ownCount}+${inheritedCount} props` : `${totalCount} props`,
     cls: "obsi-validate-type-badge",
   });
   if (entity.allow_extra) {
-    summary.createSpan({
-      text: "allow_extra",
-      cls: "obsi-validate-extra-badge",
-    });
+    summary.createSpan({ text: "allow_extra", cls: "obsi-validate-extra-badge" });
   }
 
   const content = details.createDiv({ cls: "obsi-validate-item-content" });
 
   // Mutable state
   let allowExtra = entity.allow_extra ?? false;
+  let extendsEntity = entity.extends ?? "";
   const properties: Record<string, { required?: boolean }> = {};
   for (const [k, v] of Object.entries(entity.properties)) {
     properties[k] = { required: v.required };
   }
+
+  // Extends dropdown
+  new Setting(content)
+    .setName("Extends")
+    .setDesc("Inherit properties from a parent entity")
+    .addDropdown((dd) => {
+      dd.addOption("", "(none)");
+      for (const e of schema.entities) {
+        if (e.name !== entity.name) {
+          dd.addOption(e.name, e.name);
+        }
+      }
+      dd.setValue(extendsEntity);
+      dd.onChange((val) => {
+        extendsEntity = val;
+      });
+    });
 
   // Allow extra toggle
   new Setting(content)
@@ -155,32 +213,26 @@ function renderEntityItem(
       }),
     );
 
-  // Properties list
-  const propsLabel = content.createDiv({ cls: "setting-item-name" });
-  propsLabel.setText("Properties");
+  // Own properties
+  const ownLabel = content.createDiv({ cls: "setting-item-name" });
+  ownLabel.setText("Own properties");
 
   const propsListEl = content.createDiv({ cls: "obsi-validate-prop-list" });
   renderEditablePropList(propsListEl, properties);
 
   // Add property
   const addRow = content.createDiv({ cls: "obsi-validate-add-prop-row" });
-  const selectEl = addRow.createEl("select", {
-    cls: "obsi-validate-prop-select",
-  });
+  const selectEl = addRow.createEl("select", { cls: "obsi-validate-prop-select" });
   selectEl.createEl("option", { value: "", text: "Select property..." });
   for (const pName of allPropertyNames) {
     selectEl.createEl("option", { value: pName, text: pName });
   }
-  // Also allow free text
   const freeInput = addRow.createEl("input", {
     type: "text",
     placeholder: "or type name",
     cls: "obsi-validate-free-input",
   });
-  const addBtn = addRow.createEl("button", {
-    text: "Add",
-    cls: "obsi-validate-add-btn",
-  });
+  const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
   addBtn.addEventListener("click", () => {
     const name = selectEl.value || freeInput.value.trim().toLowerCase().replace(/\s+/g, "_");
     if (!name) return;
@@ -194,16 +246,14 @@ function renderEntityItem(
     renderEditablePropList(propsListEl, properties);
   });
 
+  // Inherited properties (read-only)
+  const inheritedEl = content.createDiv({ cls: "obsi-validate-inherited" });
+  renderInheritedProps(inheritedEl, entity.name, schema);
+
   // Action bar
   const actions = content.createDiv({ cls: "obsi-validate-action-bar" });
-  const saveBtn = actions.createEl("button", {
-    text: "Save",
-    cls: "mod-cta",
-  });
-  const archiveBtn = actions.createEl("button", {
-    text: "Archive",
-    cls: "mod-warning",
-  });
+  const saveBtn = actions.createEl("button", { text: "Save", cls: "mod-cta" });
+  const archiveBtn = actions.createEl("button", { text: "Archive", cls: "mod-warning" });
 
   saveBtn.addEventListener("click", async () => {
     saveBtn.disabled = true;
@@ -214,6 +264,7 @@ function renderEntityItem(
         entity.name,
         allowExtra,
         properties,
+        extendsEntity || undefined,
       );
       plugin.schema = null;
       new Notice(`Entity "${entity.name}" saved.`);
@@ -248,6 +299,7 @@ function renderNewEntityForm(
   tabContentEl: HTMLElement,
   listEl: HTMLElement,
   allPropertyNames: string[],
+  schema: VaultSchema,
   plugin: ObsiValidatePlugin,
 ): void {
   const existing = tabContentEl.querySelector(".obsi-validate-new-form");
@@ -263,6 +315,7 @@ function renderNewEntityForm(
 
   let name = "";
   let allowExtra = false;
+  let extendsEntity = "";
   const properties: Record<string, { required?: boolean }> = {};
 
   new Setting(form).setName("Name").setDesc("Entity type name (e.g. task, note, book)").addText(
@@ -273,6 +326,19 @@ function renderNewEntityForm(
   );
 
   new Setting(form)
+    .setName("Extends")
+    .setDesc("Inherit properties from a parent entity")
+    .addDropdown((dd) => {
+      dd.addOption("", "(none)");
+      for (const e of schema.entities) {
+        dd.addOption(e.name, e.name);
+      }
+      dd.onChange((val) => {
+        extendsEntity = val;
+      });
+    });
+
+  new Setting(form)
     .setName("Allow extra fields")
     .addToggle((toggle) =>
       toggle.setValue(allowExtra).onChange((val) => {
@@ -280,16 +346,14 @@ function renderNewEntityForm(
       }),
     );
 
-  // Property adder
+  // Properties
   const propsLabel = form.createDiv({ cls: "setting-item-name" });
-  propsLabel.setText("Properties");
+  propsLabel.setText("Own properties");
 
   const propsListEl = form.createDiv({ cls: "obsi-validate-prop-list" });
 
   const addRow = form.createDiv({ cls: "obsi-validate-add-prop-row" });
-  const selectEl = addRow.createEl("select", {
-    cls: "obsi-validate-prop-select",
-  });
+  const selectEl = addRow.createEl("select", { cls: "obsi-validate-prop-select" });
   selectEl.createEl("option", { value: "", text: "Select property..." });
   for (const pName of allPropertyNames) {
     selectEl.createEl("option", { value: pName, text: pName });
@@ -299,13 +363,9 @@ function renderNewEntityForm(
     placeholder: "or type name",
     cls: "obsi-validate-free-input",
   });
-  const addBtn = addRow.createEl("button", {
-    text: "Add",
-    cls: "obsi-validate-add-btn",
-  });
+  const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
   addBtn.addEventListener("click", () => {
-    const pName =
-      selectEl.value || freeInput.value.trim().toLowerCase().replace(/\s+/g, "_");
+    const pName = selectEl.value || freeInput.value.trim().toLowerCase().replace(/\s+/g, "_");
     if (!pName) return;
     if (pName in properties) {
       new Notice(`Property "${pName}" already added.`);
@@ -318,10 +378,7 @@ function renderNewEntityForm(
   });
 
   const actions = form.createDiv({ cls: "obsi-validate-action-bar" });
-  const createBtn = actions.createEl("button", {
-    text: "Create",
-    cls: "mod-cta",
-  });
+  const createBtn = actions.createEl("button", { text: "Create", cls: "mod-cta" });
   const cancelBtn = actions.createEl("button", { text: "Cancel" });
 
   createBtn.addEventListener("click", async () => {
@@ -338,6 +395,7 @@ function renderNewEntityForm(
         name,
         allowExtra,
         properties,
+        extendsEntity || undefined,
       );
       plugin.schema = null;
       new Notice(`Entity "${name}" created.`);

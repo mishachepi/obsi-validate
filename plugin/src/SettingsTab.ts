@@ -97,7 +97,7 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
 
     guide.createEl("p", {
       text:
-        "Obsi Validate checks your notes' frontmatter against schemas " +
+        "Property Validator checks your notes' frontmatter against schemas " +
         "defined in your vault as regular markdown files. " +
         "Use the Entities and Properties tabs to manage schemas.",
     });

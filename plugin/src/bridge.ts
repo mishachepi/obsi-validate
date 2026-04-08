@@ -184,11 +184,12 @@ export async function writeEntityFile(
   name: string,
   allowExtra: boolean,
   properties: Record<string, { required?: boolean }>,
+  extendsEntity?: string,
 ): Promise<void> {
   const { entitiesPath } = resolveSchemaPaths(schemaDir);
   await ensureDirectoryExists(app, entitiesPath);
   const filePath = `${entitiesPath}/${name}_entity.md`;
-  const content = generateEntityFrontmatter(allowExtra, properties);
+  const content = generateEntityFrontmatter(allowExtra, properties, extendsEntity);
   await createOrModify(app, filePath, content);
 }
 

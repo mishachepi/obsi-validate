@@ -2,7 +2,7 @@
 
 ## Trust Model
 
-obsi-validate operates within the user's own vault. Schema files (entities, properties) are authored by the vault owner and stored as regular markdown files. The tool trusts schema content the same way a user trusts their own vault files.
+property-validator operates within the user's own vault. Schema files (entities, properties) are authored by the vault owner and stored as regular markdown files. The tool trusts schema content the same way a user trusts their own vault files.
 
 **Key assumption:** The person running validation is the vault owner (or trusts the vault content).
 

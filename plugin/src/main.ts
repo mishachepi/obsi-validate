@@ -1,5 +1,5 @@
-import { Notice, Plugin, TAbstractFile } from "obsidian";
-import type { VaultSchema, ValidateOptions, ValidationSummary } from "../../src/types";
+import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
+import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "../../src/types";
 import { ensureSchema, bridgeValidateFile, bridgeValidateVault } from "./bridge";
 import { ResultsView } from "./ResultsView";
 import { ObsiValidateSettingTab } from "./SettingsTab";
@@ -14,6 +14,8 @@ export default class ObsiValidatePlugin extends Plugin {
   schema: VaultSchema | null = null;
   statusBarEl!: HTMLElement;
   ribbonIconEl: HTMLElement | null = null;
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  lastResult: ValidationResult | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -45,24 +47,40 @@ export default class ObsiValidatePlugin extends Plugin {
       callback: () => this.validateVault(),
     });
 
+    this.addCommand({
+      id: "show-validation-results",
+      name: "Show validation results",
+      callback: () => {
+        this.activateResultsView().then(() => {
+          const view = this.getResultsView();
+          if (view && this.lastResult) view.renderSingleResult(this.lastResult);
+        });
+      },
+    });
+
     // Status bar
     this.statusBarEl = this.addStatusBarItem();
-    this.statusBarEl.setText("obsi-validate: ready");
-    this.statusBarEl.addEventListener("click", () => {
-      this.activateResultsView();
-    });
+    this.statusBarEl.addClass("obsi-validate-statusbar");
+    this.renderStatusBar();
 
     // Settings tab
     this.addSettingTab(new ObsiValidateSettingTab(this.app, this));
 
-    // Watch schema directory for changes → invalidate cache
+    // Watch file changes
     const isSchemaFile = (path: string) => {
       const base = this.settings.schemaDir === "." ? "" : this.settings.schemaDir + "/";
       return path.startsWith(`${base}entities/`) || path.startsWith(`${base}properties/`);
     };
+
     this.registerEvent(
       this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (isSchemaFile(file.path)) this.schema = null;
+        if (isSchemaFile(file.path)) {
+          this.schema = null;
+        }
+        // Re-validate active file on any modify (debounced)
+        if (file instanceof TFile && file.extension === "md") {
+          this.debouncedRevalidate();
+        }
       }),
     );
     this.registerEvent(
@@ -75,6 +93,16 @@ export default class ObsiValidatePlugin extends Plugin {
         if (isSchemaFile(file.path)) this.schema = null;
       }),
     );
+
+    // Re-validate on active file change
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        this.silentValidateActiveFile();
+      }),
+    );
+
+    // Initial validation
+    this.silentValidateActiveFile();
   }
 
   async loadSettings() {
@@ -84,6 +112,114 @@ export default class ObsiValidatePlugin extends Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
   }
+
+  onunload() {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+  }
+
+  // --- Reactive validation ---
+
+  private debouncedRevalidate() {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    const targetFile = this.app.workspace.getActiveFile();
+    this.debounceTimer = setTimeout(() => {
+      // Only validate if same file is still active
+      const current = this.app.workspace.getActiveFile();
+      if (current && targetFile && current.path === targetFile.path) {
+        this.silentValidateActiveFile();
+      }
+    }, 800);
+  }
+
+  /** Silently validate active file, update status bar + results panel if open */
+  async silentValidateActiveFile() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile || activeFile.extension !== "md") {
+      this.lastResult = null;
+      this.renderStatusBar();
+      return;
+    }
+
+    try {
+      this.schema = await ensureSchema(
+        this.app,
+        this.settings.schemaDir,
+        this.schema,
+      );
+    } catch {
+      this.lastResult = null;
+      this.renderStatusBar();
+      return;
+    }
+
+    const result = await bridgeValidateFile(
+      this.app,
+      activeFile,
+      this.schema,
+      this.validateOptions(),
+    );
+
+    this.lastResult = result;
+    this.renderStatusBar();
+
+    // Update results panel if it's open
+    const view = this.getResultsView();
+    if (view) view.renderSingleResult(result);
+  }
+
+  // --- Status bar ---
+
+  private renderStatusBar() {
+    this.statusBarEl.empty();
+    const result = this.lastResult;
+
+    if (!result || !result.entityType) {
+      this.statusBarEl.createSpan({ text: "obsi-validate", cls: "obsi-validate-sb-label" });
+      return;
+    }
+
+    // Entity type
+    this.statusBarEl.createSpan({
+      text: `[${result.entityType}]`,
+      cls: "obsi-validate-sb-entity",
+    });
+
+    // Status
+    if (result.errors.length > 0) {
+      this.statusBarEl.createSpan({
+        text: ` ${result.errors.length} error(s)`,
+        cls: "obsi-validate-sb-errors",
+      });
+    } else if (result.warnings.length > 0) {
+      this.statusBarEl.createSpan({
+        text: ` ${result.warnings.length} warn`,
+        cls: "obsi-validate-sb-warnings",
+      });
+    } else {
+      this.statusBarEl.createSpan({
+        text: " valid",
+        cls: "obsi-validate-sb-valid",
+      });
+    }
+
+    // Play button — open results panel
+    this.statusBarEl.createSpan({
+      text: " \u25B6",
+      cls: "obsi-validate-sb-btn",
+    });
+
+    // Click anywhere → open results panel
+    this.statusBarEl.addEventListener("click", () => {
+      if (this.lastResult) {
+        this.activateResultsView().then(() => {
+          const view = this.getResultsView();
+          if (view) view.renderSingleResult(this.lastResult!);
+        });
+      }
+    });
+  }
+
+  // --- Commands ---
 
   async validateVault() {
     try {
@@ -101,7 +237,6 @@ export default class ObsiValidatePlugin extends Plugin {
 
     const summary = await bridgeValidateVault(this.app, this.schema, this.validateOptions());
     await this.showResults(summary);
-    this.updateStatusBar(summary);
     new Notice(
       `Validation complete: ${summary.invalid} errors, ${summary.valid} valid`,
     );
@@ -131,6 +266,9 @@ export default class ObsiValidatePlugin extends Plugin {
       this.validateOptions(),
     );
 
+    this.lastResult = result;
+    this.renderStatusBar();
+
     await this.activateResultsView();
     const view = this.getResultsView();
     if (view) view.renderSingleResult(result);
@@ -140,16 +278,6 @@ export default class ObsiValidatePlugin extends Plugin {
     await this.activateResultsView();
     const view = this.getResultsView();
     if (view) view.renderSummary(summary);
-  }
-
-  private updateStatusBar(summary: ValidationSummary) {
-    if (summary.invalid === 0) {
-      this.statusBarEl.setText(`obsi-validate: ${summary.valid} valid`);
-    } else {
-      this.statusBarEl.setText(
-        `obsi-validate: ${summary.invalid} errors`,
-      );
-    }
   }
 
   updateRibbonIcon() {

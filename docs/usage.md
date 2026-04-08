@@ -1,63 +1,91 @@
 # CLI Usage
 
+## Installation
+
+```bash
+cd /path/to/obsi-validate
+bun install
+bun run build
+bun link           # makes `obsi-validate` available globally
+```
+
 ## Running
 
 ```bash
-# Dev mode
-bun run src/cli.ts --vault-dir /path/to/vault
-
-# Installed globally
+# Validate a directory
 obsi-validate --vault-dir /path/to/vault
+
+# Validate a single file
+obsi-validate /path/to/vault/my-task.md
+
+# Filter by entity type
+obsi-validate --vault-dir /path/to/vault -t task
+
+# JSON output
+obsi-validate --vault-dir /path/to/vault -f json
 ```
 
 ## Options
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `[path]` | File or directory to validate | — |
-| `--schema-dir <path>` | Path to entity/property schema files | `./vault` or `$SCHEMA_DIR` |
-| `--vault-dir <path>` | Vault root to validate | `.` or `$VAULT_DIR` |
+| `[path]` | File or directory to validate | `--vault-dir` value |
+| `--schema-dir <path>` | Path to entity/property schema files | from config |
+| `--vault-dir <path>` | Vault root to validate | from config |
 | `-f, --format` | Output: `pretty` or `json` | `pretty` |
-| `-t, --type` | Filter by entity type | — |
+| `-t, --type` | Filter by entity type | all |
 
-## Examples
+## Config File
 
-```bash
-# Validate specific directory
-obsi-validate /path/to/vault/tasks
+`~/.config/obsi-validate/config.json`:
 
-# Filter by entity type
-obsi-validate --vault-dir /path/to/vault -t task
-
-# JSON output (for piping)
-obsi-validate --vault-dir /path/to/vault -f json
-
-# Custom schema location
-obsi-validate --schema-dir /other/vault --vault-dir /path/to/vault
+```json
+{
+  "schema_dir": "/path/to/vault/System",
+  "vault_dir": "/path/to/vault"
+}
 ```
 
-## Environment variables
+Resolution priority: CLI flags > environment variables > config file > defaults.
+
+## Environment Variables
 
 | Variable | Maps to |
 |----------|---------|
 | `SCHEMA_DIR` | `--schema-dir` |
 | `VAULT_DIR` | `--vault-dir` |
 
-## Library usage
+## Library Usage
 
-Core modules are runtime-agnostic — pass `{ path, content }[]`, no fs dependency:
+Core modules are runtime-agnostic -- pass `{ path, content }[]`:
 
 ```typescript
 import { loadSchema, validateFile, validateFiles } from "obsi-validate"
+import type { RawFile, ValidateOptions } from "obsi-validate"
 
-// Load schema from any source
+// Load schema
 const schema = loadSchema(entityFiles, propertyFiles)
 
 // Validate single file
-const result = validateFile({ path: "task.md", content: "---\ntype_key: task\n---" }, schema)
+const result = validateFile(
+  { path: "task.md", content: "---\ntype_key: task\nstatus: Done\n---" },
+  schema,
+  { typeKeyField: "type_key" }
+)
 
 // Validate batch
 const summary = validateFiles(files, schema)
+
+// With link constraints (pass vault index)
+const vaultIndex = new Map([
+  ["Work", { path: "Areas/Work.md", data: { type_key: "area" } }],
+])
+const result2 = validateFile(file, schema, { vaultIndex })
 ```
 
-This enables reuse in Obsidian plugin (via Vault API) or any other integration.
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All files valid |
+| 1 | At least one file has errors |

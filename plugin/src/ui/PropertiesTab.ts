@@ -7,6 +7,29 @@ import {
   propertyFilePath,
 } from "../bridge";
 
+/** Validate a schema name (entity or property) */
+export function isValidSchemaName(name: string): string | null {
+  if (!name) return "Name is required";
+  if (name.length > 100) return "Name too long (max 100)";
+  if (/[\/\\:*?"<>|]/.test(name)) return "Name contains invalid characters";
+  if (name.startsWith(".") || name.startsWith("_")) return "Name cannot start with . or _";
+  return null;
+}
+
+/** Check custom validator expression syntax without executing it.
+ * Uses Function constructor solely for syntax checking — the expression comes from
+ * the vault owner's own schema files (same trust context as vault content). */
+function checkValidatorSyntax(expr: string): string | null {
+  if (!expr) return null;
+  try {
+    // Syntax check only — the function is never called
+    void Function("value", `return (${expr})`);
+    return null;
+  } catch (e) {
+    return `Syntax error: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
 const PROPERTY_TYPES = [
   "string",
   "number",
@@ -204,6 +227,11 @@ function renderPropertyItem(
   });
 
   saveBtn.addEventListener("click", async () => {
+    const syntaxErr = checkValidatorSyntax(customValidator);
+    if (syntaxErr) {
+      new Notice(`Custom validator ${syntaxErr}`);
+      return;
+    }
     saveBtn.disabled = true;
     try {
       const hasLinkConstraints = (currentType === "link" || currentType === "wikilink" || currentType === "list") &&
@@ -472,8 +500,14 @@ function renderNewPropertyForm(
   const cancelBtn = actions.createEl("button", { text: "Cancel" });
 
   createBtn.addEventListener("click", async () => {
-    if (!name) {
-      new Notice("Property name is required.");
+    const nameErr = isValidSchemaName(name);
+    if (nameErr) {
+      new Notice(nameErr);
+      return;
+    }
+    const syntaxErr = checkValidatorSyntax(customValidator);
+    if (syntaxErr) {
+      new Notice(`Custom validator ${syntaxErr}`);
       return;
     }
     createBtn.disabled = true;

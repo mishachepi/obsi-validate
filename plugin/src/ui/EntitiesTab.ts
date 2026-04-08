@@ -6,7 +6,44 @@ import {
   deprecateSchemaFile,
   entityFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal } from "./PropertiesTab";
+import { ConfirmArchiveModal, isValidSchemaName } from "./PropertiesTab";
+
+/** Render an editable property list into containerEl */
+function renderEditablePropList(
+  containerEl: HTMLElement,
+  properties: Record<string, { required?: boolean }>,
+): void {
+  containerEl.empty();
+  const entries = Object.entries(properties);
+  if (entries.length === 0) {
+    containerEl.createEl("p", {
+      text: "No properties. Add one below.",
+      cls: "obsi-validate-placeholder",
+    });
+    return;
+  }
+  for (const [propName, config] of entries) {
+    const row = containerEl.createDiv({ cls: "obsi-validate-prop-row" });
+    row.createSpan({ text: propName, cls: "obsi-validate-prop-name" });
+
+    const reqLabel = row.createEl("label", { cls: "obsi-validate-req-label" });
+    const reqCheckbox = reqLabel.createEl("input", { type: "checkbox" });
+    reqCheckbox.checked = config.required ?? false;
+    reqLabel.createSpan({ text: " required" });
+    reqCheckbox.addEventListener("change", () => {
+      properties[propName] = { required: reqCheckbox.checked || undefined };
+    });
+
+    const removeBtn = row.createEl("button", {
+      text: "\u00D7",
+      cls: "obsi-validate-enum-remove",
+    });
+    removeBtn.addEventListener("click", () => {
+      delete properties[propName];
+      renderEditablePropList(containerEl, properties);
+    });
+  }
+}
 
 export async function renderEntitiesTab(
   containerEl: HTMLElement,
@@ -38,8 +75,30 @@ export async function renderEntitiesTab(
     });
   }
 
+  // Group entities by folder
+  const grouped = new Map<string, typeof schema.entities>();
   for (const entity of schema.entities) {
-    renderEntityItem(listEl, entity, allPropertyNames, plugin);
+    const folder = entity.folder ?? "";
+    if (!grouped.has(folder)) grouped.set(folder, []);
+    grouped.get(folder)!.push(entity);
+  }
+
+  const folders = [...grouped.keys()].sort((a, b) => {
+    if (!a) return -1;
+    if (!b) return 1;
+    return a.localeCompare(b);
+  });
+
+  for (const folder of folders) {
+    if (folder) {
+      listEl.createEl("h4", {
+        text: folder,
+        cls: "obsi-validate-folder-heading",
+      });
+    }
+    for (const entity of grouped.get(folder)!) {
+      renderEntityItem(listEl, entity, allPropertyNames, plugin);
+    }
   }
 
   newBtn.addEventListener("click", () => {
@@ -49,7 +108,7 @@ export async function renderEntitiesTab(
 
 function renderEntityItem(
   containerEl: HTMLElement,
-  entity: { name: string; properties: Record<string, { required?: boolean }>; allow_extra?: boolean },
+  entity: { name: string; properties: Record<string, { required?: boolean }>; allow_extra?: boolean; folder?: string },
   allPropertyNames: string[],
   plugin: ObsiValidatePlugin,
 ): void {
@@ -59,6 +118,12 @@ function renderEntityItem(
 
   const summary = details.createEl("summary");
   summary.createSpan({ text: entity.name, cls: "obsi-validate-item-name" });
+  if (entity.folder) {
+    summary.createSpan({
+      text: entity.folder,
+      cls: "obsi-validate-folder-badge",
+    });
+  }
   const propCount = Object.keys(entity.properties).length;
   summary.createSpan({
     text: `${propCount} props`,
@@ -95,41 +160,7 @@ function renderEntityItem(
   propsLabel.setText("Properties");
 
   const propsListEl = content.createDiv({ cls: "obsi-validate-prop-list" });
-
-  function renderPropList() {
-    propsListEl.empty();
-    const entries = Object.entries(properties);
-    if (entries.length === 0) {
-      propsListEl.createEl("p", {
-        text: "No properties. Add one below.",
-        cls: "obsi-validate-placeholder",
-      });
-      return;
-    }
-    for (const [propName, config] of entries) {
-      const row = propsListEl.createDiv({ cls: "obsi-validate-prop-row" });
-      row.createSpan({ text: propName, cls: "obsi-validate-prop-name" });
-
-      const reqLabel = row.createEl("label", { cls: "obsi-validate-req-label" });
-      const reqCheckbox = reqLabel.createEl("input", { type: "checkbox" });
-      reqCheckbox.checked = config.required ?? false;
-      reqLabel.createSpan({ text: " required" });
-      reqCheckbox.addEventListener("change", () => {
-        properties[propName] = { required: reqCheckbox.checked || undefined };
-      });
-
-      const removeBtn = row.createEl("button", {
-        text: "\u00D7",
-        cls: "obsi-validate-enum-remove",
-      });
-      removeBtn.addEventListener("click", () => {
-        delete properties[propName];
-        renderPropList();
-      });
-    }
-  }
-
-  renderPropList();
+  renderEditablePropList(propsListEl, properties);
 
   // Add property
   const addRow = content.createDiv({ cls: "obsi-validate-add-prop-row" });
@@ -160,7 +191,7 @@ function renderEntityItem(
     properties[name] = {};
     selectEl.value = "";
     freeInput.value = "";
-    renderPropList();
+    renderEditablePropList(propsListEl, properties);
   });
 
   // Action bar
@@ -255,31 +286,6 @@ function renderNewEntityForm(
 
   const propsListEl = form.createDiv({ cls: "obsi-validate-prop-list" });
 
-  function renderPropList() {
-    propsListEl.empty();
-    for (const [propName, config] of Object.entries(properties)) {
-      const row = propsListEl.createDiv({ cls: "obsi-validate-prop-row" });
-      row.createSpan({ text: propName, cls: "obsi-validate-prop-name" });
-
-      const reqLabel = row.createEl("label", { cls: "obsi-validate-req-label" });
-      const reqCheckbox = reqLabel.createEl("input", { type: "checkbox" });
-      reqCheckbox.checked = config.required ?? false;
-      reqLabel.createSpan({ text: " required" });
-      reqCheckbox.addEventListener("change", () => {
-        properties[propName] = { required: reqCheckbox.checked || undefined };
-      });
-
-      const removeBtn = row.createEl("button", {
-        text: "\u00D7",
-        cls: "obsi-validate-enum-remove",
-      });
-      removeBtn.addEventListener("click", () => {
-        delete properties[propName];
-        renderPropList();
-      });
-    }
-  }
-
   const addRow = form.createDiv({ cls: "obsi-validate-add-prop-row" });
   const selectEl = addRow.createEl("select", {
     cls: "obsi-validate-prop-select",
@@ -308,7 +314,7 @@ function renderNewEntityForm(
     properties[pName] = {};
     selectEl.value = "";
     freeInput.value = "";
-    renderPropList();
+    renderEditablePropList(propsListEl, properties);
   });
 
   const actions = form.createDiv({ cls: "obsi-validate-action-bar" });
@@ -319,8 +325,9 @@ function renderNewEntityForm(
   const cancelBtn = actions.createEl("button", { text: "Cancel" });
 
   createBtn.addEventListener("click", async () => {
-    if (!name) {
-      new Notice("Entity name is required.");
+    const nameErr = isValidSchemaName(name);
+    if (nameErr) {
+      new Notice(nameErr);
       return;
     }
     createBtn.disabled = true;

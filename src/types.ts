@@ -45,6 +45,8 @@ export type EntitySchema = {
   properties: Record<string, EntityPropertyConfig>;
   /** If true, extra fields not in properties don't produce warnings */
   allow_extra?: boolean;
+  /** Folder relative to entities dir (for UI grouping) */
+  folder?: string;
 };
 
 /** Resolved property: property schema + per-entity config */

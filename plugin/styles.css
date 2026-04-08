@@ -8,9 +8,25 @@
   margin: 0 0 4px 0;
 }
 
+.obsi-validate-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obsi-validate-title-row h4 {
+  margin: 0;
+}
+
+.obsi-validate-received {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .obsi-validate-stats {
   font-size: var(--font-ui-small);
   color: var(--text-muted);
+  margin-top: 4px;
 }
 
 .obsi-validate-valid {
@@ -173,7 +189,7 @@
 }
 
 .obsi-validate-schema-item {
-  margin-bottom: 4px;
+  margin-bottom: 8px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   padding: 0;
@@ -318,13 +334,17 @@
 
 /* Folder grouping */
 .obsi-validate-folder-heading {
-  margin: 16px 0 6px 0;
+  margin: 24px 0 8px 0;
   font-size: var(--font-ui-small);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--background-modifier-border-hover);
   padding-bottom: 4px;
+}
+
+.obsi-validate-folder-heading:first-child {
+  margin-top: 8px;
 }
 
 .obsi-validate-folder-badge {
@@ -349,4 +369,39 @@
 
 .obsi-validate-pv-inputs input {
   flex: 1;
+}
+
+/* Status bar */
+.obsi-validate-statusbar {
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.obsi-validate-sb-entity {
+  color: var(--text-muted);
+}
+
+.obsi-validate-sb-errors {
+  color: var(--text-error);
+}
+
+.obsi-validate-sb-warnings {
+  color: var(--text-warning);
+}
+
+.obsi-validate-sb-valid {
+  color: var(--text-success);
+}
+
+.obsi-validate-sb-btn {
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.obsi-validate-sb-btn:hover {
+  opacity: 1;
 }

@@ -77,6 +77,14 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
       file.path.split("/").pop()?.replace("_entity.md", "").replace(".md", "") ??
       "";
 
+    // Derive folder from path (relative to entities dir)
+    const pathParts = file.path.split("/");
+    pathParts.pop(); // remove filename
+    const entIdx = pathParts.lastIndexOf("entities");
+    const folder = entIdx >= 0 && entIdx < pathParts.length - 1
+      ? pathParts.slice(entIdx + 1).join("/")
+      : undefined;
+
     // Parse properties block: { propName: { required: true } } or { propName: {} }
     const rawProps = data.properties ?? {};
     const properties: Record<string, EntityPropertyConfig> = {};
@@ -93,6 +101,7 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
       name,
       properties,
       allow_extra: data.allow_extra ?? undefined,
+      folder,
     });
   }
 

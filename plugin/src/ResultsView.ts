@@ -69,18 +69,72 @@ export class ResultsView extends ItemView {
     container.empty();
 
     const header = container.createDiv({ cls: "obsi-validate-header" });
-    header.createEl("h4", { text: "Validation Result" });
+
+    // File name + entity type
+    const titleRow = header.createDiv({ cls: "obsi-validate-title-row" });
+    const fileName = result.file.split("/").pop() ?? result.file;
+    titleRow.createEl("h4", { text: fileName });
+    if (result.entityType) {
+      titleRow.createSpan({
+        text: result.entityType,
+        cls: "obsi-validate-type-badge",
+      });
+    }
+
+    // File path (clickable)
+    const pathLink = header.createEl("a", {
+      text: result.file,
+      cls: "obsi-validate-file-link",
+    });
+    pathLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.navigateToFile(result.file);
+    });
+
+    // Stats bar
+    const stats = header.createDiv({ cls: "obsi-validate-stats" });
+    if (result.valid && result.errors.length === 0 && result.warnings.length === 0) {
+      stats.createSpan({ text: "Valid", cls: "obsi-validate-valid" });
+    } else {
+      if (result.errors.length > 0) {
+        stats.createSpan({
+          text: `${result.errors.length} error(s)`,
+          cls: "obsi-validate-invalid",
+        });
+      }
+      if (result.warnings.length > 0) {
+        if (result.errors.length > 0) stats.createSpan({ text: " | " });
+        stats.createSpan({
+          text: `${result.warnings.length} warning(s)`,
+          cls: "obsi-validate-warn-tag",
+        });
+      }
+    }
 
     if (result.errors.length === 0 && result.warnings.length === 0) {
       container.createEl("p", {
-        text: `${result.file} is valid.`,
+        text: "All fields are valid. No issues found.",
         cls: "obsi-validate-success",
       });
       return;
     }
 
-    const list = container.createDiv({ cls: "obsi-validate-results" });
-    this.renderResult(list, result);
+    // Issues list (flat, no collapsible — it's a single file)
+    const issueList = container.createDiv({ cls: "obsi-validate-issues" });
+    for (const err of result.errors) {
+      const line = issueList.createDiv({ cls: "obsi-validate-error" });
+      line.createSpan({ text: `\u2717 ${err.field}: ${err.message}` });
+      if (err.received !== undefined) {
+        line.createSpan({
+          text: ` (got: ${JSON.stringify(err.received)})`,
+          cls: "obsi-validate-received",
+        });
+      }
+    }
+    for (const warn of result.warnings) {
+      const line = issueList.createDiv({ cls: "obsi-validate-warning" });
+      line.createSpan({ text: `\u26A0 ${warn.field}: ${warn.message}` });
+    }
   }
 
   private renderResult(container: Element, result: ValidationResult) {

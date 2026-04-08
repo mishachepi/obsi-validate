@@ -137,8 +137,16 @@ export async function bridgeValidateVault(
 
 // --- Write functions ---
 
+/** Validate that a path doesn't escape the vault */
+function assertSafePath(path: string): void {
+  if (path.includes("..") || path.startsWith("/")) {
+    throw new Error(`Unsafe path: ${path}`);
+  }
+}
+
 /** Ensure a vault folder exists, creating it and parents if needed */
 async function ensureDirectoryExists(app: App, path: string): Promise<void> {
+  assertSafePath(path);
   const existing = app.vault.getAbstractFileByPath(path);
   if (existing instanceof TFolder) return;
 
@@ -160,6 +168,7 @@ async function createOrModify(
   filePath: string,
   content: string,
 ): Promise<void> {
+  assertSafePath(filePath);
   const existing = app.vault.getAbstractFileByPath(filePath);
   if (existing instanceof TFile) {
     await app.vault.modify(existing, content);

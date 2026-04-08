@@ -43,6 +43,7 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
       .setDesc(
         "Folder containing entities/ and properties/ subdirectories, relative to vault root. " +
           'Use "." for vault root.',
+          'It will create "entities" and "properties" dirs',
       )
       .addText((text) =>
         text
@@ -55,6 +56,24 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
           }),
       );
 
+
+    new Setting(containerEl)
+      .setName("Entity field")
+      .setDesc(
+        "Frontmatter field name that identifies the entity type of a note. " +
+          "For example: entity, type_name, type_key, type.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("entity")
+          .setValue(this.plugin.settings.typeKeyField)
+          .onChange(async (value) => {
+            this.plugin.settings.typeKeyField = value || "entity";
+            await this.plugin.saveSettings();
+          }),
+      );
+    
+
     new Setting(containerEl)
       .setName("Show ribbon icon")
       .setDesc(
@@ -66,22 +85,6 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.showRibbonIcon = value;
             this.plugin.updateRibbonIcon();
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Type key field")
-      .setDesc(
-        "Frontmatter field name that identifies the entity type of a note. " +
-          "For example: entity, type_name, type_key, type.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("entity")
-          .setValue(this.plugin.settings.typeKeyField)
-          .onChange(async (value) => {
-            this.plugin.settings.typeKeyField = value || "type_key";
             await this.plugin.saveSettings();
           }),
       );

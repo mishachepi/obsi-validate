@@ -1,6 +1,6 @@
 import { App, TAbstractFile, TFile, TFolder } from "obsidian";
-import { loadSchema } from "../../src/schema";
-import { validateFile, validateFiles } from "../../src/validate";
+import { loadSchema } from "./schema";
+import { validateFile, validateFiles } from "./validate";
 import {
   generateEntityFrontmatter,
   generatePropertyFrontmatter,
@@ -13,7 +13,7 @@ import type {
   ValidateOptions,
   ValidationResult,
   ValidationSummary,
-} from "../../src/types";
+} from "./types";
 
 /** Convert TFile to RawFile using cachedRead */
 export async function tFileToRawFile(

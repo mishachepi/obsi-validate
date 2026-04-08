@@ -57,7 +57,7 @@ export function validateFile(
       valid: true,
       errors: [],
       warnings: [
-        { field: "type_key", message: `Unknown entity type: ${entityType}` },
+        { field: typeKeyField, message: `Unknown entity type: ${entityType}` },
       ],
     };
   }
@@ -193,16 +193,21 @@ export function validateFiles(
   };
 }
 
-/** Normalize a wikilink value: strip [[]] and path prefix */
+/** Normalize a wikilink value: strip [[]], !embed prefix, aliases, heading refs */
 function normalizeLink(val: string): string {
   let s = val.trim();
+  // Remove embed prefix
+  if (s.startsWith("![[")) s = s.slice(1);
   if (s.startsWith("[[") && s.endsWith("]]")) {
     s = s.slice(2, -2);
   }
   // Handle [[path/Name|Alias]] → path/Name
   const pipe = s.indexOf("|");
   if (pipe >= 0) s = s.slice(0, pipe);
-  return s;
+  // Handle [[Note#Heading]] → Note
+  const hash = s.indexOf("#");
+  if (hash >= 0) s = s.slice(0, hash);
+  return s.trim();
 }
 
 /** Validate a single link target against constraints */

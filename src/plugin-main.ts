@@ -1,5 +1,5 @@
 import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
-import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "../../src/types";
+import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
 import { ensureSchema, bridgeValidateFile, bridgeValidateVault } from "./bridge";
 import { ResultsView } from "./ResultsView";
 import { ObsiValidateSettingTab } from "./SettingsTab";
@@ -15,6 +15,7 @@ export default class ObsiValidatePlugin extends Plugin {
   statusBarEl!: HTMLElement;
   ribbonIconEl: HTMLElement | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private schemaLoading: Promise<VaultSchema> | null = null;
   lastResult: ValidationResult | null = null;
 
   async onload() {
@@ -75,7 +76,7 @@ export default class ObsiValidatePlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("modify", (file: TAbstractFile) => {
         if (isSchemaFile(file.path)) {
-          this.schema = null;
+          this.schema = null; this.schemaLoading = null;
         }
         // Re-validate active file on any modify (debounced)
         if (file instanceof TFile && file.extension === "md") {
@@ -85,12 +86,12 @@ export default class ObsiValidatePlugin extends Plugin {
     );
     this.registerEvent(
       this.app.vault.on("delete", (file: TAbstractFile) => {
-        if (isSchemaFile(file.path)) this.schema = null;
+        if (isSchemaFile(file.path)) { this.schema = null; this.schemaLoading = null; }
       }),
     );
     this.registerEvent(
       this.app.vault.on("create", (file: TAbstractFile) => {
-        if (isSchemaFile(file.path)) this.schema = null;
+        if (isSchemaFile(file.path)) { this.schema = null; this.schemaLoading = null; }
       }),
     );
 
@@ -117,13 +118,34 @@ export default class ObsiValidatePlugin extends Plugin {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
   }
 
+  // --- Schema loading with mutex ---
+
+  private async getSchema(): Promise<VaultSchema> {
+    if (this.schema) return this.schema;
+    if (this.schemaLoading) return this.schemaLoading;
+
+    this.schemaLoading = ensureSchema(
+      this.app,
+      this.settings.schemaDir,
+      null,
+    ).then((s) => {
+      this.schema = s;
+      this.schemaLoading = null;
+      return s;
+    }).catch((e) => {
+      this.schemaLoading = null;
+      throw e;
+    });
+    return this.schemaLoading;
+  }
+
   // --- Reactive validation ---
 
   private debouncedRevalidate() {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     const targetFile = this.app.workspace.getActiveFile();
     this.debounceTimer = setTimeout(() => {
-      // Only validate if same file is still active
+      this.debounceTimer = null;
       const current = this.app.workspace.getActiveFile();
       if (current && targetFile && current.path === targetFile.path) {
         this.silentValidateActiveFile();
@@ -140,12 +162,9 @@ export default class ObsiValidatePlugin extends Plugin {
       return;
     }
 
+    let schema: VaultSchema;
     try {
-      this.schema = await ensureSchema(
-        this.app,
-        this.settings.schemaDir,
-        this.schema,
-      );
+      schema = await this.getSchema();
     } catch {
       this.lastResult = null;
       this.renderStatusBar();
@@ -155,7 +174,7 @@ export default class ObsiValidatePlugin extends Plugin {
     const result = await bridgeValidateFile(
       this.app,
       activeFile,
-      this.schema,
+      schema,
       this.validateOptions(),
     );
 
@@ -222,12 +241,9 @@ export default class ObsiValidatePlugin extends Plugin {
   // --- Commands ---
 
   async validateVault() {
+    let schema: VaultSchema;
     try {
-      this.schema = await ensureSchema(
-        this.app,
-        this.settings.schemaDir,
-        this.schema,
-      );
+      schema = await this.getSchema();
     } catch (e) {
       new Notice(
         `Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
@@ -235,7 +251,7 @@ export default class ObsiValidatePlugin extends Plugin {
       return;
     }
 
-    const summary = await bridgeValidateVault(this.app, this.schema, this.validateOptions());
+    const summary = await bridgeValidateVault(this.app, schema, this.validateOptions());
     await this.showResults(summary);
     new Notice(
       `Validation complete: ${summary.invalid} errors, ${summary.valid} valid`,
@@ -246,12 +262,9 @@ export default class ObsiValidatePlugin extends Plugin {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) return;
 
+    let schema: VaultSchema;
     try {
-      this.schema = await ensureSchema(
-        this.app,
-        this.settings.schemaDir,
-        this.schema,
-      );
+      schema = await this.getSchema();
     } catch (e) {
       new Notice(
         `Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
@@ -262,7 +275,7 @@ export default class ObsiValidatePlugin extends Plugin {
     const result = await bridgeValidateFile(
       this.app,
       activeFile,
-      this.schema,
+      schema,
       this.validateOptions(),
     );
 

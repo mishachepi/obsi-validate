@@ -1,7 +1,7 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_RESULTS } from "./constants";
-import type { ValidationResult, ValidationSummary } from "../../src/types";
-import type ObsiValidatePlugin from "./main";
+import type { ValidationResult, ValidationSummary } from "./types";
+import type ObsiValidatePlugin from "./plugin-main";
 
 export class ResultsView extends ItemView {
   plugin: ObsiValidatePlugin;

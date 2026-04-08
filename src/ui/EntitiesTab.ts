@@ -1,6 +1,6 @@
 import { Notice, Setting } from "obsidian";
-import type ObsiValidatePlugin from "../main";
-import type { VaultSchema, ResolvedProperty } from "../../../src/types";
+import type ObsiValidatePlugin from "../plugin-main";
+import type { VaultSchema, ResolvedProperty } from "../types";
 import {
   ensureSchema,
   writeEntityFile,

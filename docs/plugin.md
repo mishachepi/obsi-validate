@@ -4,21 +4,21 @@
 
 1. Build the plugin:
    ```bash
-   cd plugin && npm install && npm run build
+   npm install && npm run build
    ```
 
 2. Copy or symlink to your vault:
    ```bash
    mkdir -p /path/to/vault/.obsidian/plugins/property-validator
-   cp plugin/main.js plugin/manifest.json plugin/styles.css \
+   cp main.js manifest.json styles.css \
       /path/to/vault/.obsidian/plugins/property-validator/
    ```
 
    Or use symlinks for development:
    ```bash
-   ln -sf $(pwd)/plugin/main.js /path/to/vault/.obsidian/plugins/property-validator/main.js
-   ln -sf $(pwd)/plugin/manifest.json /path/to/vault/.obsidian/plugins/property-validator/manifest.json
-   ln -sf $(pwd)/plugin/styles.css /path/to/vault/.obsidian/plugins/property-validator/styles.css
+   ln -sf $(pwd)/main.js /path/to/vault/.obsidian/plugins/property-validator/main.js
+   ln -sf $(pwd)/manifest.json /path/to/vault/.obsidian/plugins/property-validator/manifest.json
+   ln -sf $(pwd)/styles.css /path/to/vault/.obsidian/plugins/property-validator/styles.css
    ```
 
 3. In Obsidian: Settings -> Community plugins -> Enable "Property Validator"
@@ -89,13 +89,21 @@ The plugin caches the parsed schema in memory. Cache is automatically invalidate
 - Schema directory setting is changed
 - Entity/property is saved or archived via the UI
 
+## Reactive Validation
+
+The plugin automatically validates the active file:
+- On file modify (debounced 800ms)
+- On active file change
+- Status bar shows `[entity_type] valid` or `[entity_type] N error(s)`
+- Click status bar to open results panel
+- Results panel auto-updates when the file changes
+
 ## Development
 
 ```bash
-cd plugin
 npm install
-npm run dev        # build with sourcemaps (for development)
-npm run build      # production build (no sourcemaps)
+npm run dev        # build with watch mode (auto-rebuild on changes)
+npm run build      # production build (type-check + minified)
 ```
 
 After rebuilding, reload Obsidian with Ctrl+R (or Cmd+R on Mac) to pick up changes.

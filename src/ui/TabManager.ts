@@ -61,7 +61,16 @@ export class TabManager {
     this.contentEl.empty();
     const tab = this.tabs.find((t) => t.id === this.activeTabId);
     if (tab) {
-      tab.render(this.contentEl);
+      const result = tab.render(this.contentEl);
+      if (result instanceof Promise) {
+        result.catch((e) => {
+          this.contentEl.empty();
+          this.contentEl.createEl("p", {
+            text: `Failed to load: ${e instanceof Error ? e.message : String(e)}`,
+            cls: "obsi-validate-error",
+          });
+        });
+      }
     }
   }
 }

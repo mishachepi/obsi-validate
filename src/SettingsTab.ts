@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import type ObsiValidatePlugin from "./main";
+import type ObsiValidatePlugin from "./plugin-main";
 import { TabManager } from "./ui/TabManager";
 import { renderEntitiesTab } from "./ui/EntitiesTab";
 import { renderPropertiesTab } from "./ui/PropertiesTab";
@@ -42,8 +42,7 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
       .setName("Schema directory")
       .setDesc(
         "Folder containing entities/ and properties/ subdirectories, relative to vault root. " +
-          'Use "." for vault root.',
-          'It will create "entities" and "properties" dirs',
+          'Use "." for vault root. Directories are created automatically.',
       )
       .addText((text) =>
         text

@@ -1,5 +1,5 @@
 import { Modal, App, Notice, Setting } from "obsidian";
-import type ObsiValidatePlugin from "../main";
+import type ObsiValidatePlugin from "../plugin-main";
 import {
   ensureSchema,
   writePropertyFile,

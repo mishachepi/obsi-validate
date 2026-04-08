@@ -1,20 +1,22 @@
+/** YAML reserved words that must be quoted */
+const YAML_RESERVED = new Set([
+  "true", "false", "null", "yes", "no", "on", "off",
+  "True", "False", "Null", "Yes", "No", "On", "Off",
+  "TRUE", "FALSE", "NULL", "YES", "NO", "ON", "OFF",
+]);
+
 /** Quote YAML scalar values that contain special characters */
 function yamlScalar(val: string | number): string {
   const s = String(val);
   if (
-    s.includes(":") ||
-    s.includes("#") ||
-    s.includes("'") ||
-    s.includes('"') ||
-    s.includes("\n") ||
-    s.startsWith(" ") ||
-    s.endsWith(" ") ||
     s === "" ||
-    s === "true" ||
-    s === "false" ||
-    s === "null"
+    YAML_RESERVED.has(s) ||
+    /[:#'"{}[\],&*!|>@`]/.test(s) ||
+    s.includes("\n") ||
+    /^\s|\s$/.test(s) ||
+    /^[-?]/.test(s)
   ) {
-    return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
   }
   return s;
 }

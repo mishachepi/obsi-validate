@@ -12,26 +12,32 @@ Dependency is one-way: entity -> property. Properties know nothing about entitie
 ## Module Structure
 
 ```
-src/                          # Core library (runtime-agnostic)
+src/
+  # Core library (runtime-agnostic, no file I/O)
   types.ts                    # All types: RawFile, VaultSchema, ValidateOptions, etc.
-  schema.ts                   # Parse entity/property files -> entityMap + Zod validators
+  schema.ts                   # Parse entity/property files -> entityMap + Zod + inheritance
   validate.ts                 # Three-level validation + link constraints + custom JS
   index.ts                    # Library entry point (re-exports)
   cli.ts                      # CLI entry point (only module with fs access)
   config.ts                   # CLI config resolution
 
-plugin/                       # Obsidian plugin
-  src/
-    main.ts                   # Plugin class: commands, ribbon, status bar, events
-    bridge.ts                 # TFile <-> RawFile adapter, vault index, file writes
-    constants.ts              # Settings interface, defaults
-    SettingsTab.ts            # Tabbed settings UI
-    ResultsView.ts            # Validation results panel (ItemView)
-    ui/
-      TabManager.ts           # Generic tab navigation component
-      EntitiesTab.ts          # Entity CRUD UI
-      PropertiesTab.ts        # Property CRUD UI
-      yamlWriter.ts           # YAML frontmatter serializer
+  # Obsidian plugin
+  plugin-main.ts              # Plugin class: commands, ribbon, status bar, events
+  bridge.ts                   # TFile <-> RawFile adapter, vault index, file writes
+  constants.ts                # Settings interface, defaults
+  SettingsTab.ts              # Tabbed settings UI (Settings, Entities, Properties)
+  ResultsView.ts              # Validation results panel (ItemView)
+  ui/
+    TabManager.ts             # Generic tab navigation component
+    EntitiesTab.ts            # Entity CRUD UI with inheritance
+    PropertiesTab.ts          # Property CRUD UI with link constraints
+    yamlWriter.ts             # YAML frontmatter serializer
+    empty-fs.ts               # fs shim for gray-matter in browser
+
+# Root (official Obsidian plugin layout)
+manifest.json                 # Plugin manifest
+styles.css                    # Plugin styles
+esbuild.config.mjs            # Build config
 ```
 
 ## Two Consumers, One Core

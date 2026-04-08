@@ -2,16 +2,24 @@ import matter from "gray-matter";
 import type {
   RawFile,
   VaultSchema,
+  ValidateOptions,
+  VaultIndex,
+  LinkConstraints,
   ValidationResult,
   ValidationSummary,
   ValidationError,
 } from "./types.js";
 
+const DEFAULT_TYPE_KEY = "type_key";
+
 /** Validate a single file's frontmatter against the vault schema */
 export function validateFile(
   file: RawFile,
   schema: VaultSchema,
+  options?: ValidateOptions,
 ): ValidationResult {
+  const typeKeyField = options?.typeKeyField ?? DEFAULT_TYPE_KEY;
+
   let data: Record<string, unknown>;
   try {
     data = matter(file.content).data;
@@ -29,7 +37,7 @@ export function validateFile(
       warnings: [],
     };
   }
-  const entityType = data.type_key as string | undefined;
+  const entityType = data[typeKeyField] as string | undefined;
 
   if (!entityType) {
     return {
@@ -37,7 +45,7 @@ export function validateFile(
       entityType: null,
       valid: true,
       errors: [],
-      warnings: [{ field: "type_key", message: "Missing type_key, skipped" }],
+      warnings: [{ field: typeKeyField, message: `Missing ${typeKeyField}, skipped` }],
     };
   }
 
@@ -61,7 +69,7 @@ export function validateFile(
 
   // Check each frontmatter field
   for (const [field, value] of Object.entries(data)) {
-    if (field === "type_key") continue;
+    if (field === typeKeyField) continue;
 
     const prop = propByName.get(field);
 
@@ -84,6 +92,51 @@ export function validateFile(
           expected: prop.property_type,
           received: value,
         });
+      }
+    }
+
+    // Custom post-validator (JS expression from vault YAML, receives `value`)
+    // This is intentionally user-defined code from the vault owner's own schema files.
+    // It runs in the same trust context as the vault itself — no untrusted input.
+    if (prop.custom_validator) {
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function("value", `return (${prop.custom_validator})`);
+        const customResult = fn(value);
+        if (customResult === false) {
+          errors.push({
+            field,
+            message: `Custom validation failed`,
+            received: value,
+          });
+        } else if (typeof customResult === "string") {
+          errors.push({
+            field,
+            message: customResult,
+            received: value,
+          });
+        }
+      } catch (e) {
+        warnings.push({
+          field,
+          message: `Custom validator error: ${e instanceof Error ? e.message : String(e)}`,
+        });
+      }
+    }
+
+    // Link constraint validation
+    if (prop.link_constraints && options?.vaultIndex) {
+      const linkValues = Array.isArray(value) ? value : [value];
+      for (const linkVal of linkValues) {
+        const linkErrors = validateLinkTarget(
+          String(linkVal),
+          prop.link_constraints,
+          options.vaultIndex,
+          options.typeKeyField ?? DEFAULT_TYPE_KEY,
+        );
+        for (const msg of linkErrors) {
+          errors.push({ field, message: msg, received: linkVal });
+        }
       }
     }
   }
@@ -111,6 +164,7 @@ export function validateFile(
 export function validateFiles(
   files: RawFile[],
   schema: VaultSchema,
+  options?: ValidateOptions,
 ): ValidationSummary {
   const results: ValidationResult[] = [];
   let valid = 0;
@@ -118,7 +172,7 @@ export function validateFiles(
   let skipped = 0;
 
   for (const file of files) {
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, options);
     results.push(result);
 
     if (result.entityType === null && result.valid) {
@@ -137,4 +191,71 @@ export function validateFiles(
     skipped,
     results,
   };
+}
+
+/** Normalize a wikilink value: strip [[]] and path prefix */
+function normalizeLink(val: string): string {
+  let s = val.trim();
+  if (s.startsWith("[[") && s.endsWith("]]")) {
+    s = s.slice(2, -2);
+  }
+  // Handle [[path/Name|Alias]] → path/Name
+  const pipe = s.indexOf("|");
+  if (pipe >= 0) s = s.slice(0, pipe);
+  return s;
+}
+
+/** Validate a single link target against constraints */
+function validateLinkTarget(
+  rawLink: string,
+  constraints: LinkConstraints,
+  index: VaultIndex,
+  typeKeyField: string,
+): string[] {
+  const linkName = normalizeLink(rawLink);
+  if (!linkName) return [];
+
+  const entry = index.get(linkName) ?? index.get(linkName.split("/").pop()!);
+  if (!entry) {
+    return [`Linked note "${linkName}" not found in vault`];
+  }
+
+  const errors: string[] = [];
+
+  if (constraints.target_type_key) {
+    const actual = entry.data[typeKeyField];
+    if (actual !== constraints.target_type_key) {
+      errors.push(
+        `Linked "${linkName}" has ${typeKeyField}="${actual ?? "none"}", expected "${constraints.target_type_key}"`,
+      );
+    }
+  }
+
+  if (constraints.target_folder) {
+    if (!entry.path.startsWith(constraints.target_folder)) {
+      errors.push(
+        `Linked "${linkName}" is not in folder "${constraints.target_folder}"`,
+      );
+    }
+  }
+
+  if (constraints.target_has_property) {
+    if (!(constraints.target_has_property in entry.data)) {
+      errors.push(
+        `Linked "${linkName}" is missing property "${constraints.target_has_property}"`,
+      );
+    }
+  }
+
+  if (constraints.target_property_value) {
+    const { property, value } = constraints.target_property_value;
+    const actual = entry.data[property];
+    if (String(actual) !== String(value)) {
+      errors.push(
+        `Linked "${linkName}" has ${property}="${actual ?? "none"}", expected "${value}"`,
+      );
+    }
+  }
+
+  return errors;
 }

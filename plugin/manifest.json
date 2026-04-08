@@ -1,0 +1,9 @@
+{
+  "id": "obsi-validate",
+  "name": "Obsi Validate",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Validate vault frontmatter against entity/property schemas",
+  "author": "mishachepi",
+  "isDesktopOnly": false
+}

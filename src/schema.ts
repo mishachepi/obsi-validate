@@ -3,6 +3,7 @@ import { z, type ZodTypeAny } from "zod";
 import type {
   RawFile,
   PropertySchema,
+  LinkConstraints,
   EntitySchema,
   EntityPropertyConfig,
   ResolvedProperty,
@@ -18,7 +19,29 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
     if (!data.property_type && data.type_key !== "property") continue;
 
     const name =
-      data.name ?? file.path.split("/").pop()?.replace(".md", "") ?? "";
+      data.name ??
+      file.path.split("/").pop()?.replace("_property.md", "").replace(".md", "") ??
+      "";
+
+    // Derive folder from path (relative to properties dir)
+    const pathParts = file.path.split("/");
+    pathParts.pop(); // remove filename
+    // Find "properties" in path and take everything after it
+    const propIdx = pathParts.lastIndexOf("properties");
+    const folder = propIdx >= 0 && propIdx < pathParts.length - 1
+      ? pathParts.slice(propIdx + 1).join("/")
+      : undefined;
+
+    // Parse link constraints
+    let linkConstraints: LinkConstraints | undefined;
+    if (data.target_type_key || data.target_folder || data.target_has_property || data.target_property_value) {
+      linkConstraints = {
+        target_type_key: data.target_type_key ?? undefined,
+        target_folder: data.target_folder ?? undefined,
+        target_has_property: data.target_has_property ?? undefined,
+        target_property_value: data.target_property_value ?? undefined,
+      };
+    }
 
     const prop: PropertySchema = {
       name,
@@ -29,6 +52,9 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
       min_value: data.min_value ?? undefined,
       max_value: data.max_value ?? undefined,
       unit: data.unit ?? undefined,
+      link_constraints: linkConstraints,
+      custom_validator: data.custom_validator ?? undefined,
+      folder,
     };
 
     prop.validator = buildPropertyValidator(prop);

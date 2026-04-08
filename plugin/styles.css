@@ -1,0 +1,352 @@
+.obsi-validate-header {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 8px;
+}
+
+.obsi-validate-header h4 {
+  margin: 0 0 4px 0;
+}
+
+.obsi-validate-stats {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.obsi-validate-valid {
+  color: var(--text-success);
+}
+
+.obsi-validate-invalid {
+  color: var(--text-error);
+}
+
+.obsi-validate-success {
+  color: var(--text-success);
+  font-style: italic;
+}
+
+.obsi-validate-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.obsi-validate-file {
+  margin-bottom: 4px;
+}
+
+.obsi-validate-file summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: var(--font-ui-small);
+}
+
+.obsi-validate-fail-tag {
+  color: var(--text-error);
+  font-weight: bold;
+}
+
+.obsi-validate-warn-tag {
+  color: var(--text-warning);
+  font-weight: bold;
+}
+
+.obsi-validate-file-link {
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.obsi-validate-file-link:hover {
+  color: var(--text-accent-hover);
+}
+
+.obsi-validate-entity-type {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.obsi-validate-issues {
+  padding-left: 8px;
+  font-size: var(--font-ui-small);
+  font-family: var(--font-monospace);
+}
+
+.obsi-validate-error {
+  color: var(--text-error);
+}
+
+.obsi-validate-warning {
+  color: var(--text-warning);
+}
+
+/* Settings guide */
+.obsi-validate-guide {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.obsi-validate-guide h4 {
+  margin: 16px 0 6px 0;
+  font-size: var(--font-ui-medium);
+}
+
+.obsi-validate-guide p {
+  color: var(--text-muted);
+  margin: 4px 0;
+}
+
+.obsi-validate-guide pre {
+  background: var(--background-secondary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.obsi-validate-guide code {
+  font-size: var(--font-ui-small);
+}
+
+.obsi-validate-guide ul,
+.obsi-validate-guide ol {
+  padding-left: 20px;
+  color: var(--text-muted);
+}
+
+.obsi-validate-guide li {
+  margin: 2px 0;
+  font-size: var(--font-ui-small);
+}
+
+/* Tab navigation */
+.obsi-validate-tab-nav {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 16px;
+}
+
+.obsi-validate-tab-btn {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-medium);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.obsi-validate-tab-btn:hover {
+  color: var(--text-normal);
+}
+
+.obsi-validate-tab-btn.active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.obsi-validate-tab-content {
+  min-height: 200px;
+}
+
+/* Tab header (title + new button) */
+.obsi-validate-tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.obsi-validate-tab-header h3 {
+  margin: 0;
+}
+
+.obsi-validate-new-btn {
+  font-size: var(--font-ui-small);
+}
+
+/* Schema items (entities/properties list) */
+.obsi-validate-schema-list {
+  margin-top: 8px;
+}
+
+.obsi-validate-schema-item {
+  margin-bottom: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 0;
+}
+
+.obsi-validate-schema-item summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obsi-validate-item-name {
+  font-weight: 600;
+}
+
+.obsi-validate-type-badge {
+  font-size: var(--font-ui-smaller);
+  background: var(--background-secondary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--text-muted);
+}
+
+.obsi-validate-extra-badge {
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-success);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--text-on-accent);
+}
+
+.obsi-validate-item-content {
+  padding: 4px 12px 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Property rows in entity editor */
+.obsi-validate-prop-list {
+  margin: 8px 0;
+}
+
+.obsi-validate-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.obsi-validate-prop-name {
+  flex: 1;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.obsi-validate-req-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Add property row */
+.obsi-validate-add-prop-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.obsi-validate-prop-select {
+  flex: 1;
+  max-width: 160px;
+}
+
+.obsi-validate-free-input {
+  flex: 1;
+  max-width: 120px;
+}
+
+.obsi-validate-add-btn {
+  font-size: var(--font-ui-small);
+}
+
+/* Action bar */
+.obsi-validate-action-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Enum values editor */
+.obsi-validate-enum-values {
+  margin: 4px 0;
+}
+
+.obsi-validate-enum-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 2px 0;
+}
+
+.obsi-validate-enum-input {
+  flex: 1;
+}
+
+.obsi-validate-enum-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+}
+
+.obsi-validate-enum-remove:hover {
+  color: var(--text-error);
+}
+
+/* Constraints section */
+.obsi-validate-constraints {
+  margin: 4px 0;
+}
+
+/* New entity/property form */
+.obsi-validate-new-form {
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.obsi-validate-new-form h4 {
+  margin: 0 0 8px 0;
+}
+
+/* Folder grouping */
+.obsi-validate-folder-heading {
+  margin: 16px 0 6px 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+  padding-bottom: 4px;
+}
+
+.obsi-validate-folder-badge {
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-hover);
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: var(--text-accent);
+}
+
+/* Link constraints */
+.obsi-validate-pv-row {
+  margin: 8px 0;
+}
+
+.obsi-validate-pv-inputs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.obsi-validate-pv-inputs input {
+  flex: 1;
+}

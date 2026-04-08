@@ -34,14 +34,15 @@ describe("parseProperties", () => {
     expect(status.validator!.safeParse("Invalid").success).toBe(false);
   });
 
-  test("builds link validator accepting string or array", async () => {
+  test("builds link validator accepting single string", async () => {
     const files = await readMdFiles(join(FIXTURES, "properties"));
     const props = parseProperties(files);
     const area = props.find((p) => p.name === "area")!;
 
     expect(area.validator!.safeParse("[[Work]]").success).toBe(true);
+    // link type is single string, not array
     expect(area.validator!.safeParse(["[[Work]]", "[[Home]]"]).success).toBe(
-      true,
+      false,
     );
   });
 });

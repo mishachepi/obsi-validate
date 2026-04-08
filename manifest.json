@@ -1,0 +1,9 @@
+{
+	"id": "property-validator",
+	"name": "Property Validator",
+	"version": "0.1.0",
+	"minAppVersion": "1.4.0",
+	"description": "Validate vault frontmatter against entity/property schemas with inheritance",
+	"author": "mishachepi",
+	"isDesktopOnly": false
+}

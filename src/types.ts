@@ -8,6 +8,18 @@ export type EntityPropertyConfig = {
   required?: boolean;
 };
 
+/** Constraints for link/list properties — validate what the link points to */
+export type LinkConstraints = {
+  /** Target note must have this value in its type key field */
+  target_type_key?: string;
+  /** Target note must be in this folder (prefix match) */
+  target_folder?: string;
+  /** Target note must have this property defined */
+  target_has_property?: string;
+  /** Target note's property must equal this value */
+  target_property_value?: { property: string; value: string };
+};
+
 /** Raw property schema as read from vault property file frontmatter */
 export type PropertySchema = {
   name: string;
@@ -16,8 +28,14 @@ export type PropertySchema = {
   min_value?: number;
   max_value?: number;
   unit?: string;
+  /** Constraints for link/list targets */
+  link_constraints?: LinkConstraints;
+  /** JS expression for custom post-validation (receives `value` variable, returns true/false or error string) */
+  custom_validator?: string;
   /** Compiled Zod validator for this property's value */
   validator?: ZodTypeAny;
+  /** Folder relative to properties dir (for UI grouping) */
+  folder?: string;
 };
 
 /** Entity type as read from vault entity file frontmatter */
@@ -25,13 +43,19 @@ export type EntitySchema = {
   name: string;
   /** Property name → config (required, etc.) */
   properties: Record<string, EntityPropertyConfig>;
+  /** Parent entity name for inheritance */
+  extends?: string;
   /** If true, extra fields not in properties don't produce warnings */
   allow_extra?: boolean;
+  /** Folder relative to entities dir (for UI grouping) */
+  folder?: string;
 };
 
 /** Resolved property: property schema + per-entity config */
 export type ResolvedProperty = PropertySchema & {
   required: boolean;
+  /** Which entity this property was inherited from (undefined = own) */
+  inheritedFrom?: string;
 };
 
 /** Complete vault schema with derived entity→properties mapping */
@@ -68,4 +92,17 @@ export type ValidationSummary = {
   invalid: number;
   skipped: number;
   results: ValidationResult[];
+};
+
+/** Map of normalized note name → its frontmatter data, for link validation */
+export type VaultIndex = Map<string, { path: string; data: Record<string, unknown> }>;
+
+/** Options for validation */
+export type ValidateOptions = {
+  /** Frontmatter field name that identifies entity type (default: "type_key") */
+  typeKeyField?: string;
+  /** Default entity type if typeKeyField is missing (empty = skip file) */
+  defaultEntityType?: string;
+  /** Vault index for cross-file link validation */
+  vaultIndex?: VaultIndex;
 };

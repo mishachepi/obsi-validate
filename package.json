@@ -1,27 +1,35 @@
 {
-  "name": "obsi-validate",
-  "version": "0.1.0",
-  "type": "module",
-  "main": "./dist/index.js",
-  "exports": {
-    ".": "./dist/index.js",
-    "./cli": "./dist/cli.js"
-  },
-  "bin": {
-    "obsi-validate": "./dist/cli.js"
-  },
-  "scripts": {
-    "dev": "bun run src/cli.ts",
-    "build": "bun build src/cli.ts src/index.ts --outdir dist --target bun",
-    "test": "bun test"
-  },
-  "dependencies": {
-    "commander": "^13.1.0",
-    "gray-matter": "^4.0.3",
-    "zod": "^3.24.0"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.2.0",
-    "typescript": "^5.7.0"
-  }
+	"name": "property-validator",
+	"version": "0.1.0",
+	"description": "Obsidian plugin: validate vault frontmatter against entity/property schemas",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"build:cli": "bun build src/cli.ts src/index.ts --outdir dist --target bun",
+		"test": "bun test",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"frontmatter",
+		"validation",
+		"schema"
+	],
+	"license": "MIT",
+	"dependencies": {
+		"obsidian": "latest",
+		"commander": "^13.1.0",
+		"gray-matter": "^4.0.3",
+		"zod": "^3.24.0"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.2.0",
+		"@types/node": "^20.0.0",
+		"esbuild": "^0.25.0",
+		"tslib": "2.4.0",
+		"typescript": "^5.7.0"
+	}
 }

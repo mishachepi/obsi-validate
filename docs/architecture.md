@@ -186,7 +186,7 @@ flowchart TB
 | `time` | `z.string()` | |
 | `datetime` | `z.union([z.string(), z.date()])` | |
 | `enum` | `z.preprocess(coerce, z.enum([...]))` | numbers coerced to strings |
-| `link` | `z.union([z.string(), z.array()])` | + optional link constraints |
-| `wikilink` | `z.union([z.string(), z.array()])` | alias for link |
-| `list` | `z.array(z.unknown())` | + optional link constraints |
+| `link` | `z.string()` | single link + optional link constraints |
+| `links` | `z.array(z.string())` | multiple links + optional link constraints |
+| `list` | `z.array(z.unknown())` | array of any values |
 | `emoji` | `z.string()` | |

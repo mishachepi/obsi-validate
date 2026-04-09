@@ -254,10 +254,13 @@ function validateLinkTarget(
   const errors: string[] = [];
 
   if (constraints.target_type_key) {
-    const actual = entry.data[typeKeyField];
-    if (actual !== constraints.target_type_key) {
+    const actual = entry.data[typeKeyField] as string | undefined;
+    const allowed = Array.isArray(constraints.target_type_key)
+      ? constraints.target_type_key
+      : [constraints.target_type_key];
+    if (!actual || !allowed.includes(actual)) {
       errors.push(
-        `Linked "${linkName}" has ${typeKeyField}="${actual ?? "none"}", expected "${constraints.target_type_key}"`,
+        `Linked "${linkName}" has ${typeKeyField}="${actual ?? "none"}", expected one of: ${allowed.join(", ")}`,
       );
     }
   }

@@ -5,11 +5,15 @@ import { homedir } from "os";
 export type Config = {
   schema_dir: string;
   vault_dir: string;
+  type_key_field: string;
+  default_type: string;
 };
 
 const DEFAULTS: Config = {
   schema_dir: "./vault",
   vault_dir: ".",
+  type_key_field: "type_key",
+  default_type: "",
 };
 
 const CONFIG_PATH = join(
@@ -42,6 +46,12 @@ export function resolveConfig(flags: Partial<Config>): Config {
       process.env.VAULT_DIR ??
       file.vault_dir ??
       DEFAULTS.vault_dir,
+    type_key_field:
+      file.type_key_field ??
+      DEFAULTS.type_key_field,
+    default_type:
+      file.default_type ??
+      DEFAULTS.default_type,
   };
 }
 

@@ -185,10 +185,16 @@ export async function writeEntityFile(
   allowExtra: boolean,
   properties: Record<string, { required?: boolean }>,
   extendsEntity?: string,
+  sourcePath?: string,
 ): Promise<void> {
-  const { entitiesPath } = resolveSchemaPaths(schemaDir);
-  await ensureDirectoryExists(app, entitiesPath);
-  const filePath = `${entitiesPath}/${name}_entity.md`;
+  let filePath: string;
+  if (sourcePath) {
+    filePath = sourcePath;
+  } else {
+    const { entitiesPath } = resolveSchemaPaths(schemaDir);
+    await ensureDirectoryExists(app, entitiesPath);
+    filePath = `${entitiesPath}/${name}_entity.md`;
+  }
   const content = generateEntityFrontmatter(allowExtra, properties, extendsEntity);
   await createOrModify(app, filePath, content);
 }
@@ -206,16 +212,22 @@ export async function writePropertyFile(
     unit?: string;
     custom_validator?: string;
     link_constraints?: {
-      target_type_key?: string;
+      target_type_key?: string | string[];
       target_folder?: string;
       target_has_property?: string;
       target_property_value?: { property: string; value: string };
     };
   },
+  sourcePath?: string,
 ): Promise<void> {
-  const { propertiesPath } = resolveSchemaPaths(schemaDir);
-  await ensureDirectoryExists(app, propertiesPath);
-  const filePath = `${propertiesPath}/${name}_property.md`;
+  let filePath: string;
+  if (sourcePath) {
+    filePath = sourcePath;
+  } else {
+    const { propertiesPath } = resolveSchemaPaths(schemaDir);
+    await ensureDirectoryExists(app, propertiesPath);
+    filePath = `${propertiesPath}/${name}_property.md`;
+  }
   const content = generatePropertyFrontmatter(type, opts);
   await createOrModify(app, filePath, content);
 }

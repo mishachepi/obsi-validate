@@ -7,6 +7,7 @@ import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
 import type {
   RawFile,
+  ValidateOptions,
   VaultSchema,
   ValidationResult,
   ValidationSummary,
@@ -58,6 +59,7 @@ async function validateStreaming(
   paths: string[],
   schema: VaultSchema,
   typeFilter?: string,
+  validateOpts?: ValidateOptions,
 ): Promise<ValidationSummary> {
   const results: ValidationResult[] = [];
   let valid = 0;
@@ -66,7 +68,7 @@ async function validateStreaming(
 
   for (const path of paths) {
     const content = await readFrontmatterOnly(path);
-    const result = validateFile({ path, content }, schema);
+    const result = validateFile({ path, content }, schema, validateOpts);
 
     if (typeFilter && result.entityType !== typeFilter) continue;
 
@@ -140,12 +142,17 @@ program
     ]);
     const schema = loadSchema(entityFiles, propertyFiles);
 
+    const validateOpts: ValidateOptions = {
+      typeKeyField: config.type_key_field,
+      defaultEntityType: config.default_type || undefined,
+    };
+
     // Single file or directory
     const targetStat = await stat(vaultDir);
     const targetPaths = targetStat.isFile()
       ? [vaultDir]
       : await walkMdFiles(vaultDir);
-    const summary = await validateStreaming(targetPaths, schema, options.type);
+    const summary = await validateStreaming(targetPaths, schema, options.type, validateOpts);
 
     // Output
     if (options.format === "json") {

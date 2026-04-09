@@ -64,7 +64,7 @@ export function generatePropertyFrontmatter(
     unit?: string;
     custom_validator?: string;
     link_constraints?: {
-      target_type_key?: string;
+      target_type_key?: string | string[];
       target_folder?: string;
       target_has_property?: string;
       target_property_value?: { property: string; value: string };
@@ -95,7 +95,15 @@ export function generatePropertyFrontmatter(
   if (opts?.link_constraints) {
     const lc = opts.link_constraints;
     if (lc.target_type_key) {
-      lines.push(`target_type_key: ${yamlScalar(lc.target_type_key)}`);
+      const keys = Array.isArray(lc.target_type_key) ? lc.target_type_key : [lc.target_type_key];
+      if (keys.length === 1) {
+        lines.push(`target_type_key: ${yamlScalar(keys[0])}`);
+      } else {
+        lines.push("target_type_key:");
+        for (const k of keys) {
+          lines.push(`  - ${yamlScalar(k)}`);
+        }
+      }
     }
     if (lc.target_folder) {
       lines.push(`target_folder: ${yamlScalar(lc.target_folder)}`);

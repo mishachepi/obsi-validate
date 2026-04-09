@@ -6,6 +6,9 @@ import { renderPropertiesTab } from "./ui/PropertiesTab";
 
 export class ObsiValidateSettingTab extends PluginSettingTab {
   plugin: ObsiValidatePlugin;
+  private tabManager: TabManager | null = null;
+  private defaultTab: string | undefined;
+  private searchAfterRender: string | null = null;
 
   constructor(app: App, plugin: ObsiValidatePlugin) {
     super(app, plugin);
@@ -32,9 +35,40 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
         label: "Properties",
         render: (el) => renderPropertiesTab(el, this.plugin),
       },
-    ]);
+    ], this.defaultTab);
 
+    this.tabManager = tabs;
     tabs.render();
+
+    if (this.searchAfterRender !== null) {
+      const query = this.searchAfterRender;
+      this.fillSearch(query);
+    }
+  }
+
+  /** Navigate to a tab and fill search. Call BEFORE triggering display(). */
+  navigateTo(tab: string, query: string): void {
+    this.defaultTab = tab;
+    this.searchAfterRender = query;
+  }
+
+  private fillSearch(query: string): void {
+    const tryFill = (attempts: number) => {
+      const searchEl = this.containerEl.querySelector(
+        ".obsi-validate-tab-content .obsi-validate-search",
+      ) as HTMLInputElement;
+      if (searchEl) {
+        searchEl.value = query;
+        searchEl.dispatchEvent(new Event("input"));
+        searchEl.focus();
+        // Clear navigation state after successful fill
+        this.defaultTab = undefined;
+        this.searchAfterRender = null;
+      } else if (attempts > 0) {
+        setTimeout(() => tryFill(attempts - 1), 150);
+      }
+    };
+    tryFill(10);
   }
 
   private renderSettings(containerEl: HTMLElement): void {

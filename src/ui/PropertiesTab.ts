@@ -63,6 +63,31 @@ export async function renderPropertiesTab(
     cls: "obsi-validate-new-btn",
   });
 
+  // Search
+  const searchInput = containerEl.createEl("input", {
+    type: "text",
+    placeholder: "Search properties...",
+    cls: "obsi-validate-search",
+  });
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.toLowerCase();
+    listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
+      const name = (el as HTMLElement).dataset.name ?? "";
+      (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
+    });
+    listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {
+      const next = el.nextElementSibling;
+      // Hide heading if all items in group are hidden
+      let hasVisible = false;
+      let sib = next;
+      while (sib && sib.classList.contains("obsi-validate-schema-item")) {
+        if ((sib as HTMLElement).style.display !== "none") hasVisible = true;
+        sib = sib.nextElementSibling;
+      }
+      (el as HTMLElement).style.display = hasVisible ? "" : "none";
+    });
+  });
+
   const listEl = containerEl.createDiv({ cls: "obsi-validate-schema-list" });
 
   if (schema.properties.length === 0) {
@@ -106,13 +131,14 @@ export async function renderPropertiesTab(
 
 function renderPropertyItem(
   containerEl: HTMLElement,
-  prop: { name: string; property_type: string; allowed_values?: (string | number)[]; min_value?: number; max_value?: number; unit?: string; custom_validator?: string; folder?: string; link_constraints?: { target_type_key?: string; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } },
+  prop: { name: string; property_type: string; allowed_values?: (string | number)[]; min_value?: number; max_value?: number; unit?: string; custom_validator?: string; folder?: string; sourcePath?: string; link_constraints?: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } },
   schema: { entities: { name: string }[] },
   plugin: ObsiValidatePlugin,
 ): void {
   const details = containerEl.createEl("details", {
     cls: "obsi-validate-schema-item",
   });
+  details.dataset.name = prop.name;
 
   const summary = details.createEl("summary");
   summary.createSpan({ text: prop.name, cls: "obsi-validate-item-name" });
@@ -137,7 +163,7 @@ function renderPropertyItem(
   let unit = prop.unit;
   let customValidator = prop.custom_validator ?? "";
   let linkConstraints = prop.link_constraints ? { ...prop.link_constraints } : {
-    target_type_key: undefined as string | undefined,
+    target_type_key: undefined as string | string[] | undefined,
     target_folder: undefined as string | undefined,
     target_has_property: undefined as string | undefined,
     target_property_value: undefined as { property: string; value: string } | undefined,
@@ -160,7 +186,7 @@ function renderPropertyItem(
           unit: currentType === "number" ? unit : undefined,
           custom_validator: customValidator || undefined,
           link_constraints: hasLC ? linkConstraints : undefined,
-        });
+        }, prop.sourcePath);
         plugin.schema = null; plugin.schemaLoading = null;
       } catch (e) {
         new Notice(`Failed to save: ${e}`);
@@ -270,7 +296,7 @@ function renderPropertyItem(
 
 function renderLinkConstraintsEditor(
   containerEl: HTMLElement,
-  constraints: { target_type_key?: string; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } },
+  constraints: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } },
   schema: { entities: { name: string }[] },
   onChange: (lc: typeof constraints) => void,
 ): void {
@@ -279,21 +305,25 @@ function renderLinkConstraintsEditor(
   const desc = containerEl.createDiv({ cls: "setting-item-description" });
   desc.setText("Validate what the linked notes must satisfy");
 
-  // Target entity — dropdown from entity names
+  // Target entities — comma-separated, with entity name hints
+  const currentKeys = Array.isArray(constraints.target_type_key)
+    ? constraints.target_type_key.join(", ")
+    : constraints.target_type_key ?? "";
+  const entityNames = schema.entities.map((e) => e.name).join(", ");
+
   new Setting(containerEl)
-    .setName("Target entity")
-    .setDesc("Linked note must have this entity type")
-    .addDropdown((dd) => {
-      dd.addOption("", "(any)");
-      for (const e of schema.entities) {
-        dd.addOption(e.name, e.name);
-      }
-      dd.setValue(constraints.target_type_key ?? "");
-      dd.onChange((val) => {
-        constraints.target_type_key = val || undefined;
-        onChange(constraints);
-      });
-    });
+    .setName("Target entities")
+    .setDesc(`Comma-separated entity types. Available: ${entityNames}`)
+    .addText((text) =>
+      text
+        .setValue(currentKeys)
+        .setPlaceholder("e.g. area, epic")
+        .onChange((val) => {
+          const parts = val.split(",").map((s) => s.trim()).filter(Boolean);
+          constraints.target_type_key = parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : parts;
+          onChange(constraints);
+        }),
+    );
 
   // Target folder
   new Setting(containerEl)

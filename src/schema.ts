@@ -55,6 +55,7 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
       link_constraints: linkConstraints,
       custom_validator: data.custom_validator ?? undefined,
       folder,
+      sourcePath: file.path,
     };
 
     prop.validator = buildPropertyValidator(prop);
@@ -103,6 +104,7 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
       extends: data.extends ?? undefined,
       allow_extra: data.allow_extra ?? undefined,
       folder,
+      sourcePath: file.path,
     });
   }
 

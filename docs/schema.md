@@ -102,14 +102,14 @@ allowed_values:
 | `time` | String | |
 | `datetime` | String or Date | |
 | `enum` | One of allowed_values | `allowed_values` (required for validation) |
-| `link` | String or string[] | link constraints |
-| `wikilink` | String or string[] | link constraints (alias for link) |
-| `list` | Array | link constraints (applied to each item) |
+| `link` | Single string (wikilink or markdown) | link constraints |
+| `links` | Array of strings | link constraints (each item checked) |
+| `list` | Array of any values | |
 | `emoji` | String | |
 
 ## Link Constraints
 
-For `link`, `wikilink`, and `list` types, you can constrain what the linked notes must satisfy:
+For `link` and `links` types, you can constrain what the linked notes must satisfy:
 
 ```yaml
 ---

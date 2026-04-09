@@ -75,9 +75,13 @@ export class ResultsView extends ItemView {
     const fileName = result.file.split("/").pop() ?? result.file;
     titleRow.createEl("h4", { text: fileName });
     if (result.entityType) {
-      titleRow.createSpan({
+      const entityBadge = titleRow.createEl("a", {
         text: result.entityType,
-        cls: "obsi-validate-type-badge",
+        cls: "obsi-validate-type-badge obsi-validate-type-badge-link",
+      });
+      entityBadge.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.plugin.openSettingsTab("entities", result.entityType!);
       });
     }
     const refreshBtn = titleRow.createEl("button", {
@@ -135,7 +139,7 @@ export class ResultsView extends ItemView {
       section.createDiv({ text: "Errors", cls: "obsi-validate-section-label obsi-validate-section-error" });
       for (const err of result.errors) {
         const row = section.createDiv({ cls: "obsi-validate-issue-row" });
-        row.createSpan({ text: err.field, cls: "obsi-validate-issue-field obsi-validate-field-error" });
+        this.renderFieldLink(row, err.field, "obsi-validate-field-error");
         row.createSpan({ text: err.message, cls: "obsi-validate-issue-msg" });
         if (err.received !== undefined) {
           row.createSpan({
@@ -151,7 +155,7 @@ export class ResultsView extends ItemView {
       section.createDiv({ text: "Warnings", cls: "obsi-validate-section-label obsi-validate-section-warn" });
       for (const warn of result.warnings) {
         const row = section.createDiv({ cls: "obsi-validate-issue-row" });
-        row.createSpan({ text: warn.field, cls: "obsi-validate-issue-field obsi-validate-field-warn" });
+        this.renderFieldLink(row, warn.field, "obsi-validate-field-warn");
         row.createSpan({ text: warn.message, cls: "obsi-validate-issue-msg" });
       }
     }
@@ -192,6 +196,18 @@ export class ResultsView extends ItemView {
       const line = issueList.createDiv({ cls: "obsi-validate-warning" });
       line.createSpan({ text: `  \u26A0 ${warn.field}: ${warn.message}` });
     }
+  }
+
+  /** Render a clickable field name that opens property settings */
+  private renderFieldLink(container: HTMLElement, fieldName: string, colorCls: string) {
+    const link = container.createEl("a", {
+      text: fieldName,
+      cls: `obsi-validate-issue-field obsi-validate-field-link ${colorCls}`,
+    });
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.plugin.openSettingsTab("properties", fieldName);
+    });
   }
 
   private navigateToFile(path: string) {

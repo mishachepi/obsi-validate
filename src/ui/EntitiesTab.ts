@@ -106,6 +106,29 @@ export async function renderEntitiesTab(
     cls: "obsi-validate-new-btn",
   });
 
+  // Search
+  const searchInput = containerEl.createEl("input", {
+    type: "text",
+    placeholder: "Search entities...",
+    cls: "obsi-validate-search",
+  });
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.toLowerCase();
+    listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
+      const name = (el as HTMLElement).dataset.name ?? "";
+      (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
+    });
+    listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {
+      let hasVisible = false;
+      let sib = el.nextElementSibling;
+      while (sib && sib.classList.contains("obsi-validate-schema-item")) {
+        if ((sib as HTMLElement).style.display !== "none") hasVisible = true;
+        sib = sib.nextElementSibling;
+      }
+      (el as HTMLElement).style.display = hasVisible ? "" : "none";
+    });
+  });
+
   const listEl = containerEl.createDiv({ cls: "obsi-validate-schema-list" });
 
   if (schema.entities.length === 0) {
@@ -148,7 +171,7 @@ export async function renderEntitiesTab(
 
 function renderEntityItem(
   containerEl: HTMLElement,
-  entity: { name: string; properties: Record<string, { required?: boolean }>; extends?: string; allow_extra?: boolean; folder?: string },
+  entity: { name: string; properties: Record<string, { required?: boolean }>; extends?: string; allow_extra?: boolean; folder?: string; sourcePath?: string },
   allPropertyNames: string[],
   schema: VaultSchema,
   plugin: ObsiValidatePlugin,
@@ -156,6 +179,7 @@ function renderEntityItem(
   const details = containerEl.createEl("details", {
     cls: "obsi-validate-schema-item",
   });
+  details.dataset.name = entity.name;
 
   // Count own vs inherited
   const resolved = schema.entityMap.get(entity.name) ?? [];
@@ -202,6 +226,7 @@ function renderEntityItem(
           allowExtra,
           properties,
           extendsEntity || undefined,
+          entity.sourcePath,
         );
         plugin.schema = null; plugin.schemaLoading = null;
       } catch (e) {

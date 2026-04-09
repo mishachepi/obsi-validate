@@ -37,12 +37,14 @@ property-validator --vault-dir /path/to/vault -f json
 
 ## Config File
 
-`~/.config/property-validator/config.json`:
+`~/.config/obsi-validate/config.json`:
 
 ```json
 {
   "schema_dir": "/path/to/vault/System",
-  "vault_dir": "/path/to/vault"
+  "vault_dir": "/path/to/vault",
+  "type_key_field": "type_key",
+  "default_type": ""
 }
 ```
 

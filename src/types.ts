@@ -10,8 +10,8 @@ export type EntityPropertyConfig = {
 
 /** Constraints for link/list properties — validate what the link points to */
 export type LinkConstraints = {
-  /** Target note must have this value in its type key field */
-  target_type_key?: string;
+  /** Target note must have one of these entity types */
+  target_type_key?: string | string[];
   /** Target note must be in this folder (prefix match) */
   target_folder?: string;
   /** Target note must have this property defined */
@@ -36,6 +36,8 @@ export type PropertySchema = {
   validator?: ZodTypeAny;
   /** Folder relative to properties dir (for UI grouping) */
   folder?: string;
+  /** Original file path in vault (for writing back) */
+  sourcePath?: string;
 };
 
 /** Entity type as read from vault entity file frontmatter */
@@ -49,6 +51,8 @@ export type EntitySchema = {
   allow_extra?: boolean;
   /** Folder relative to entities dir (for UI grouping) */
   folder?: string;
+  /** Original file path in vault (for writing back) */
+  sourcePath?: string;
 };
 
 /** Resolved property: property schema + per-entity config */

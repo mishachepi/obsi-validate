@@ -18,6 +18,15 @@
   margin: 0;
 }
 
+.obsi-validate-type-badge-link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.obsi-validate-type-badge-link:hover {
+  opacity: 0.7;
+}
+
 .obsi-validate-refresh-btn {
   margin-left: auto;
   background: transparent;
@@ -145,6 +154,15 @@
   color: var(--text-warning);
 }
 
+.obsi-validate-field-link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.obsi-validate-field-link:hover {
+  opacity: 0.7;
+}
+
 .obsi-validate-issue-msg {
   color: var(--text-normal);
   flex: 1;
@@ -158,6 +176,22 @@
   padding: 1px 6px;
   border-radius: 4px;
   flex-shrink: 0;
+}
+
+/* Entity checkboxes for link constraints */
+.obsi-validate-entity-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 8px;
+}
+
+.obsi-validate-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-ui-small);
+  cursor: pointer;
 }
 
 .obsi-validate-entity-type {
@@ -264,6 +298,22 @@
 
 .obsi-validate-new-btn {
   font-size: var(--font-ui-small);
+}
+
+.obsi-validate-search {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.obsi-validate-search:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
 }
 
 /* Schema items (entities/properties list) */

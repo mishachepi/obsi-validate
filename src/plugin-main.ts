@@ -17,6 +17,7 @@ export default class ObsiValidatePlugin extends Plugin {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   schemaLoading: Promise<VaultSchema> | null = null;
   lastResult: ValidationResult | null = null;
+  private settingsTab: ObsiValidateSettingTab | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -65,7 +66,8 @@ export default class ObsiValidatePlugin extends Plugin {
     this.renderStatusBar();
 
     // Settings tab
-    this.addSettingTab(new ObsiValidateSettingTab(this.app, this));
+    this.settingsTab = new ObsiValidateSettingTab(this.app, this);
+    this.addSettingTab(this.settingsTab);
 
     // Watch file changes
     const isSchemaFile = (path: string) => {
@@ -306,6 +308,19 @@ export default class ObsiValidatePlugin extends Plugin {
       return leaves[0].view as ResultsView;
     }
     return null;
+  }
+
+  /** Open plugin settings on a specific tab with search pre-filled */
+  openSettingsTab(tab: "properties" | "entities", searchQuery: string) {
+    if (!this.settingsTab) return;
+    // Set navigation target before display() is called
+    this.settingsTab.navigateTo(tab, searchQuery);
+    // @ts-ignore — Obsidian internal API
+    const setting = this.app.setting;
+    if (setting) {
+      setting.open();
+      setting.openTabById("property-validator");
+    }
   }
 
   async activateResultsView() {

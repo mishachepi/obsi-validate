@@ -195,7 +195,7 @@ export async function writeEntityFile(
     await ensureDirectoryExists(app, entitiesPath);
     filePath = `${entitiesPath}/${name}_entity.md`;
   }
-  const content = generateEntityFrontmatter(allowExtra, properties, extendsEntity);
+  const content = generateEntityFrontmatter(name, allowExtra, properties, extendsEntity);
   await createOrModify(app, filePath, content);
 }
 
@@ -210,6 +210,7 @@ export async function writePropertyFile(
     min_value?: number;
     max_value?: number;
     unit?: string;
+    nullable?: boolean;
     custom_validator?: string;
     link_constraints?: {
       target_type_key?: string | string[];
@@ -228,7 +229,7 @@ export async function writePropertyFile(
     await ensureDirectoryExists(app, propertiesPath);
     filePath = `${propertiesPath}/${name}_property.md`;
   }
-  const content = generatePropertyFrontmatter(type, opts);
+  const content = generatePropertyFrontmatter(name, type, opts);
   await createOrModify(app, filePath, content);
 }
 

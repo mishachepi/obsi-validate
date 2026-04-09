@@ -9,8 +9,7 @@ import type {
   ValidationSummary,
   ValidationError,
 } from "./types.js";
-
-const DEFAULT_TYPE_KEY = "type_key";
+import { DEFAULT_ENTITY_FIELD } from "./constants.js";
 
 /** Validate a single file's frontmatter against the vault schema */
 export function validateFile(
@@ -18,7 +17,7 @@ export function validateFile(
   schema: VaultSchema,
   options?: ValidateOptions,
 ): ValidationResult {
-  const typeKeyField = options?.typeKeyField ?? DEFAULT_TYPE_KEY;
+  const typeKeyField = options?.typeKeyField ?? DEFAULT_ENTITY_FIELD;
 
   let data: Record<string, unknown>;
   try {
@@ -37,6 +36,11 @@ export function validateFile(
       warnings: [],
     };
   }
+  // Skip schema definition files (entity/property declarations)
+  if (data.entity_name || data.property_name) {
+    return { file: file.path, entityType: null, valid: true, errors: [], warnings: [] };
+  }
+
   const rawEntityType = data[typeKeyField];
   const defaultType = options?.defaultEntityType;
 
@@ -109,6 +113,9 @@ export function validateFile(
     // No property file → no validator → skip value validation (field is still recognized)
     if (!prop.validator) continue;
 
+    // Nullable properties accept null/undefined/empty string
+    if (prop.nullable && (value === null || value === undefined || value === "")) continue;
+
     const result = prop.validator.safeParse(value);
     if (!result.success) {
       for (const issue of result.error.issues) {
@@ -158,7 +165,7 @@ export function validateFile(
           String(linkVal),
           prop.link_constraints,
           options.vaultIndex,
-          options.typeKeyField ?? DEFAULT_TYPE_KEY,
+          options.typeKeyField ?? DEFAULT_ENTITY_FIELD,
         );
         for (const msg of linkErrors) {
           errors.push({ field, message: msg, received: linkVal });

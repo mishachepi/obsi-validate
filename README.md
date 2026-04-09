@@ -28,7 +28,7 @@ Also works as a standalone CLI:
 
 ```bash
 npm run build:cli && bun link
-property-validator --vault-dir /path/to/vault
+obsi-validate --vault-dir /path/to/vault
 ```
 
 ## Docs
@@ -41,12 +41,10 @@ property-validator --vault-dir /path/to/vault
 
 ## TODO
 
-- [ ] Search/filter in entities and properties settings tabs
-- [ ] Links from Validation Results to property settings (click field name to open/create property)
-- [ ] CodeMirror 6 inline decorations: red underline on invalid frontmatter values, hover tooltips
+- [ ] Improve entity inheritance (inherit allow_extra, multi-level UI display, abstract entities)
+- [ ] Inline decorations: red underline on invalid frontmatter values, hover tooltips
 - [ ] Quick-fix suggestions for enum values (fuzzy match "Did you mean...?")
 - [ ] Autofix suggestions: `"true"` to `true`, array to string, string to array, type coercion
-- [ ] General UI/UX improvements
 
 ## Tech Stack
 

@@ -2,9 +2,11 @@ import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
 import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
 import { ensureSchema, bridgeValidateFile, bridgeValidateVault } from "./bridge";
 import { ResultsView } from "./ResultsView";
+import { VaultResultsView } from "./VaultResultsView";
 import { ObsiValidateSettingTab } from "./SettingsTab";
 import {
   VIEW_TYPE_RESULTS,
+  VIEW_TYPE_VAULT_RESULTS,
   DEFAULT_SETTINGS,
   type PluginSettings,
 } from "./constants";
@@ -22,10 +24,14 @@ export default class ObsiValidatePlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    // Register results view
+    // Register views
     this.registerView(
       VIEW_TYPE_RESULTS,
       (leaf) => new ResultsView(leaf, this),
+    );
+    this.registerView(
+      VIEW_TYPE_VAULT_RESULTS,
+      (leaf) => new VaultResultsView(leaf, this),
     );
 
     // Ribbon icon — full vault scan (off by default)
@@ -239,7 +245,7 @@ export default class ObsiValidatePlugin extends Plugin {
     }
 
     const summary = await bridgeValidateVault(this.app, schema, this.validateOptions());
-    await this.showResults(summary);
+    await this.showVaultResults(summary);
     new Notice(
       `Validation complete: ${summary.invalid} errors, ${summary.valid} valid`,
     );
@@ -274,9 +280,9 @@ export default class ObsiValidatePlugin extends Plugin {
     if (view) view.renderSingleResult(result);
   }
 
-  private async showResults(summary: ValidationSummary) {
-    await this.activateResultsView();
-    const view = this.getResultsView();
+  private async showVaultResults(summary: ValidationSummary) {
+    await this.activateVaultResultsView();
+    const view = this.getVaultResultsView();
     if (view) view.renderSummary(summary);
   }
 
@@ -332,6 +338,28 @@ export default class ObsiValidatePlugin extends Plugin {
       }
     }
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RESULTS);
+    if (leaves.length > 0) {
+      this.app.workspace.revealLeaf(leaves[0]);
+    }
+  }
+
+  private getVaultResultsView(): VaultResultsView | null {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_RESULTS);
+    if (leaves.length > 0) {
+      return leaves[0].view as VaultResultsView;
+    }
+    return null;
+  }
+
+  async activateVaultResultsView() {
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_RESULTS);
+    if (existing.length === 0) {
+      const leaf = this.app.workspace.getRightLeaf(false);
+      if (leaf) {
+        await leaf.setViewState({ type: VIEW_TYPE_VAULT_RESULTS, active: true });
+      }
+    }
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_RESULTS);
     if (leaves.length > 0) {
       this.app.workspace.revealLeaf(leaves[0]);
     }

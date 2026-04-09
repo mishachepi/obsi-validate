@@ -30,8 +30,9 @@ Settings -> Property Validator -> **Settings** tab:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Schema directory | `.` | Folder with `entities/` and `properties/` subdirs (relative to vault root) |
+| Entity field | `entity` | Frontmatter field name that identifies entity type |
+| Default entity type | (none) | Entity type used when the entity field is missing. Empty = skip file |
 | Show ribbon icon | off | Show "Validate vault" button in left sidebar |
-| Type key field | `type_key` | Frontmatter field that identifies entity type |
 
 ## Commands
 
@@ -39,19 +40,31 @@ Settings -> Property Validator -> **Settings** tab:
 |---------|-------------|
 | **Validate current file** | Check the active note (requires open file) |
 | **Validate vault** | Scan all markdown files in the vault |
+| **Show validation results** | Open the per-file results panel |
 
 Available via Command Palette (Cmd/Ctrl+P) or ribbon icon.
 
-## Results Panel
+## Results Panels
 
-Opens in the right sidebar. Shows:
+### Validation Results (per-file)
+
+Opens in the right sidebar. Auto-updates on file change. Shows:
+
+- Entity type badge (clickable — opens entity settings)
+- Error/warning list with clickable field names (opens property settings)
+- Refresh button (↻)
+- Status bar shows `[entity_type] valid` or `[entity_type] N error(s)`
+
+### Vault Validation (full scan)
+
+Separate panel opened by "Validate vault" command. Not overwritten by per-file validation. Shows:
 
 - **Summary**: Total / Valid / Invalid / Skipped counts
-- **File list**: Only files with issues, sorted by severity
-  - `FAIL` (red) = has errors (invalid values, missing required fields)
-  - `WARN` (yellow) = has warnings only (unknown fields, missing type key)
+- **File list**: Only files with issues
+  - `FAIL` (red) = has errors
+  - `WARN` (yellow) = warnings only
 - **Click file path** to navigate to the note
-- **Status bar** shows error count (click to open results panel)
+- Refresh button (↻) to re-scan
 
 ## Managing Schemas
 
@@ -60,9 +73,11 @@ Opens in the right sidebar. Shows:
 Settings -> Property Validator -> **Entities** tab
 
 - Lists all entities grouped by subdirectory (folder shown as tag)
-- Expand to see: properties (with required toggles), allow_extra toggle
+- Expand to see: properties (with required toggles), extends dropdown, allow_extra toggle
 - Add/remove properties from an entity
+- Inherited properties shown read-only, grouped by source entity
 - Create new entities
+- **Open file** button — opens the entity's `.md` declaration
 - Archive entities (moves to `_deprecated/` directory)
 
 ### Properties Tab
@@ -71,15 +86,17 @@ Settings -> Property Validator -> **Properties** tab
 
 - Lists all properties grouped by subdirectory (folder shown as tag)
 - Expand to see: type, constraints (type-specific), custom validator
+- **Nullable** toggle — allow null/empty values for any property
 - **Enum properties**: edit allowed values list
 - **Number properties**: set min/max and unit
 - **Link/List properties**: configure link constraints:
-  - Target entity type (dropdown from known entities)
+  - Target entity type (comma-separated for multiple)
   - Target folder (prefix match)
   - Target has property (field must exist)
   - Target property value (field must equal value)
 - **Custom validator**: JS expression for any type
 - Create new properties
+- **Open file** button — opens the property's `.md` declaration
 - Archive properties (moves to `_deprecated/`)
 
 ## Schema Caching

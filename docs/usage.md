@@ -3,26 +3,26 @@
 ## Installation
 
 ```bash
-cd /path/to/property-validator
+cd /path/to/obsi-validate
 bun install
 bun run build
-bun link           # makes `property-validator` available globally
+bun link           # makes `obsi-validate` available globally
 ```
 
 ## Running
 
 ```bash
 # Validate a directory
-property-validator --vault-dir /path/to/vault
+obsi-validate --vault-dir /path/to/vault
 
 # Validate a single file
-property-validator /path/to/vault/my-task.md
+obsi-validate /path/to/vault/my-task.md
 
 # Filter by entity type
-property-validator --vault-dir /path/to/vault -t task
+obsi-validate --vault-dir /path/to/vault -t task
 
 # JSON output
-property-validator --vault-dir /path/to/vault -f json
+obsi-validate --vault-dir /path/to/vault -f json
 ```
 
 ## Options
@@ -62,8 +62,8 @@ Resolution priority: CLI flags > environment variables > config file > defaults.
 Core modules are runtime-agnostic -- pass `{ path, content }[]`:
 
 ```typescript
-import { loadSchema, validateFile, validateFiles } from "property-validator"
-import type { RawFile, ValidateOptions } from "property-validator"
+import { loadSchema, validateFile, validateFiles } from "obsi-validate"
+import type { RawFile, ValidateOptions } from "obsi-validate"
 
 // Load schema
 const schema = loadSchema(entityFiles, propertyFiles)

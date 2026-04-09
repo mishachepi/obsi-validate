@@ -16,9 +16,10 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
 
   for (const file of files) {
     const { data } = matter(file.content);
-    if (!data.property_type && data.type_key !== "property") continue;
+    if (!data.property_name && !data.property_type) continue;
 
     const name =
+      data.property_name ??
       data.name ??
       file.path.split("/").pop()?.replace("_property.md", "").replace(".md", "") ??
       "";
@@ -52,6 +53,7 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
       min_value: data.min_value ?? undefined,
       max_value: data.max_value ?? undefined,
       unit: data.unit ?? undefined,
+      nullable: data.nullable ?? undefined,
       link_constraints: linkConstraints,
       custom_validator: data.custom_validator ?? undefined,
       folder,
@@ -71,9 +73,10 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
 
   for (const file of files) {
     const { data } = matter(file.content);
-    if (data.component_type !== "entity") continue;
+    if (!data.entity_name && !data.properties) continue;
 
     const name =
+      data.entity_name ??
       data.name ??
       file.path.split("/").pop()?.replace("_entity.md", "").replace(".md", "") ??
       "";

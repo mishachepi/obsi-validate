@@ -28,8 +28,8 @@ Entity files declare structure -- which fields belong to this type and whether t
 
 ```yaml
 ---
-component_type: entity
-extends: trackable
+entity_name: task
+extends: structure
 properties:
   priority: { required: true }
   estimate: {}
@@ -40,11 +40,12 @@ allow_extra: false
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `component_type` | yes | Must be `entity` |
-| `name` | no | Entity name. Fallback: filename minus `_entity.md` |
+| `entity_name` | yes* | Entity name. Fallback: filename minus `_entity.md` |
 | `extends` | no | Parent entity name for inheritance |
-| `properties` | no | **Own** field declarations with optional `{ required: true }` |
+| `properties` | yes* | **Own** field declarations with optional `{ required: true }` |
 | `allow_extra` | no | If `true`, unknown fields don't produce warnings (default: `false`) |
+
+*A file is recognized as an entity if it has `entity_name` or `properties`.
 
 ### Entity Inheritance
 
@@ -69,6 +70,7 @@ Property files declare validation -- how to check field values. Properties don't
 
 ```yaml
 ---
+property_name: status
 property_type: enum
 allowed_values:
   - Backlog
@@ -79,17 +81,22 @@ allowed_values:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `property_type` | yes | Determines Zod validator (see types below) |
-| `name` | no | Property name. Fallback: filename minus `_property.md` |
+| `property_name` | yes* | Property name. Fallback: filename minus `_property.md` |
+| `property_type` | yes* | Determines Zod validator (see types below) |
 | `allowed_values` | enum only | List of allowed values |
 | `min_value` | number only | Minimum numeric value |
 | `max_value` | number only | Maximum numeric value |
 | `unit` | number only | Unit label (informational) |
-| `target_type_key` | link/list | Target note must have this entity type |
+| `nullable` | no | If `true`, null/empty values pass validation (default: `false`) |
+| `target_type_key` | link/list | Target note must have this entity type (string or array) |
 | `target_folder` | link/list | Target note must be in this folder (prefix match) |
 | `target_has_property` | link/list | Target note must have this property |
 | `target_property_value` | link/list | `{property, value}` -- target's property must equal value |
 | `custom_validator` | any | JS expression for post-validation (see below) |
+
+*A file is recognized as a property if it has `property_name` or `property_type`.
+
+Files with `entity_name` or `property_name` in frontmatter are automatically skipped during validation (they are schema definitions, not content).
 
 ## Supported Types
 
@@ -163,7 +170,7 @@ Custom validators run after Zod type validation. If the expression throws, a war
 
 ## Validated Notes
 
-Notes must have the configured type key field (default: `type_key`) in frontmatter to be matched against an entity:
+Notes must have the configured entity field (default: `entity`) in frontmatter to be matched against an entity:
 
 ```yaml
 ---

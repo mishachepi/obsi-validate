@@ -131,7 +131,7 @@ export async function renderPropertiesTab(
 
 function renderPropertyItem(
   containerEl: HTMLElement,
-  prop: { name: string; property_type: string; allowed_values?: (string | number)[]; min_value?: number; max_value?: number; unit?: string; custom_validator?: string; folder?: string; sourcePath?: string; link_constraints?: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } },
+  prop: { name: string; property_type: string; allowed_values?: (string | number)[]; min_value?: number; max_value?: number; unit?: string; nullable?: boolean; custom_validator?: string; folder?: string; sourcePath?: string; link_constraints?: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } },
   schema: { entities: { name: string }[] },
   plugin: ObsiValidatePlugin,
 ): void {
@@ -161,6 +161,7 @@ function renderPropertyItem(
   let minValue = prop.min_value;
   let maxValue = prop.max_value;
   let unit = prop.unit;
+  let nullable = prop.nullable ?? false;
   let customValidator = prop.custom_validator ?? "";
   let linkConstraints = prop.link_constraints ? { ...prop.link_constraints } : {
     target_type_key: undefined as string | string[] | undefined,
@@ -184,6 +185,7 @@ function renderPropertyItem(
           min_value: currentType === "number" ? minValue : undefined,
           max_value: currentType === "number" ? maxValue : undefined,
           unit: currentType === "number" ? unit : undefined,
+          nullable: nullable || undefined,
           custom_validator: customValidator || undefined,
           link_constraints: hasLC ? linkConstraints : undefined,
         }, prop.sourcePath);
@@ -206,6 +208,17 @@ function renderPropertyItem(
       autoSave();
     });
   });
+
+  // Nullable toggle
+  new Setting(content)
+    .setName("Nullable")
+    .setDesc("Allow null / empty values")
+    .addToggle((toggle) =>
+      toggle.setValue(nullable).onChange((val) => {
+        nullable = val;
+        autoSave();
+      }),
+    );
 
   // Constraints container
   const constraintsEl = content.createDiv({ cls: "obsi-validate-constraints" });
@@ -272,8 +285,17 @@ function renderPropertyItem(
         }),
     );
 
-  // Action bar — only Archive (changes auto-save)
+  // Action bar
   const actions = content.createDiv({ cls: "obsi-validate-action-bar" });
+
+  if (prop.sourcePath) {
+    const openBtn = actions.createEl("button", { text: "Open file" });
+    openBtn.addEventListener("click", () => {
+      const file = plugin.app.vault.getAbstractFileByPath(prop.sourcePath!);
+      if (file) plugin.app.workspace.getLeaf().openFile(file as import("obsidian").TFile);
+    });
+  }
+
   const archiveBtn = actions.createEl("button", {
     text: "Archive",
     cls: "mod-warning",

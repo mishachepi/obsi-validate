@@ -30,6 +30,8 @@ export type PropertySchema = {
   unit?: string;
   /** Constraints for link/list targets */
   link_constraints?: LinkConstraints;
+  /** If true, null/empty values are valid for this property */
+  nullable?: boolean;
   /** JS expression for custom post-validation (receives `value` variable, returns true/false or error string) */
   custom_validator?: string;
   /** Compiled Zod validator for this property's value */

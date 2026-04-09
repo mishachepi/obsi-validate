@@ -302,8 +302,17 @@ function renderEntityItem(
   const inheritedEl = content.createDiv({ cls: "obsi-validate-inherited" });
   renderInheritedProps(inheritedEl, entity.name, schema);
 
-  // Action bar — only Archive (changes auto-save)
+  // Action bar
   const actions = content.createDiv({ cls: "obsi-validate-action-bar" });
+
+  if (entity.sourcePath) {
+    const openBtn = actions.createEl("button", { text: "Open file" });
+    openBtn.addEventListener("click", () => {
+      const file = plugin.app.vault.getAbstractFileByPath(entity.sourcePath!);
+      if (file) plugin.app.workspace.getLeaf().openFile(file as import("obsidian").TFile);
+    });
+  }
+
   const archiveBtn = actions.createEl("button", { text: "Archive", cls: "mod-warning" });
 
   archiveBtn.addEventListener("click", () => {

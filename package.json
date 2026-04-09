@@ -4,6 +4,9 @@
 	"description": "Obsidian plugin: validate vault frontmatter against entity/property schemas",
 	"main": "main.js",
 	"type": "module",
+	"bin": {
+		"obsi-validate": "./dist/cli.js"
+	},
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",

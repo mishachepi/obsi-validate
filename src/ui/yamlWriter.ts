@@ -23,11 +23,12 @@ function yamlScalar(val: string | number): string {
 
 /** Generate entity file frontmatter content */
 export function generateEntityFrontmatter(
+  name: string,
   allowExtra: boolean,
   properties: Record<string, { required?: boolean }>,
   extendsEntity?: string,
 ): string {
-  const lines: string[] = ["---", "component_type: entity"];
+  const lines: string[] = ["---", `entity_name: ${yamlScalar(name)}`];
 
   if (extendsEntity) {
     lines.push(`extends: ${extendsEntity}`);
@@ -56,12 +57,14 @@ export function generateEntityFrontmatter(
 
 /** Generate property file frontmatter content */
 export function generatePropertyFrontmatter(
+  name: string,
   type: string,
   opts?: {
     allowed_values?: (string | number)[];
     min_value?: number;
     max_value?: number;
     unit?: string;
+    nullable?: boolean;
     custom_validator?: string;
     link_constraints?: {
       target_type_key?: string | string[];
@@ -71,7 +74,7 @@ export function generatePropertyFrontmatter(
     };
   },
 ): string {
-  const lines: string[] = ["---", `property_type: ${type}`];
+  const lines: string[] = ["---", `property_name: ${yamlScalar(name)}`, `property_type: ${type}`];
 
   if (opts?.allowed_values && opts.allowed_values.length > 0) {
     lines.push("allowed_values:");
@@ -90,6 +93,10 @@ export function generatePropertyFrontmatter(
 
   if (opts?.unit) {
     lines.push(`unit: ${yamlScalar(opts.unit)}`);
+  }
+
+  if (opts?.nullable) {
+    lines.push("nullable: true");
   }
 
   if (opts?.link_constraints) {

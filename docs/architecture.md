@@ -26,7 +26,8 @@ src/
   bridge.ts                   # TFile <-> RawFile adapter, vault index, file writes
   constants.ts                # Settings interface, defaults
   SettingsTab.ts              # Tabbed settings UI (Settings, Entities, Properties)
-  ResultsView.ts              # Validation results panel (ItemView)
+  ResultsView.ts              # Per-file validation results panel
+  VaultResultsView.ts         # Full vault scan results panel
   ui/
     TabManager.ts             # Generic tab navigation component
     EntitiesTab.ts            # Entity CRUD UI with inheritance
@@ -157,7 +158,8 @@ flowchart TB
     subgraph Plugin
         M[main.ts<br/>Plugin class]
         B[bridge.ts<br/>TFile->RawFile adapter]
-        RV[ResultsView.ts<br/>Results panel]
+        RV[ResultsView.ts<br/>Per-file results]
+        VRV[VaultResultsView.ts<br/>Vault scan results]
         ST[SettingsTab.ts<br/>3-tab settings]
     end
 

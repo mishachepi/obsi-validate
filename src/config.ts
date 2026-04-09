@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { DEFAULT_ENTITY_FIELD } from "./constants.js";
 
 export type Config = {
   schema_dir: string;
@@ -12,7 +13,7 @@ export type Config = {
 const DEFAULTS: Config = {
   schema_dir: "./vault",
   vault_dir: ".",
-  type_key_field: "type_key",
+  type_key_field: DEFAULT_ENTITY_FIELD,
   default_type: "",
 };
 

@@ -56,4 +56,3 @@ export function resolveConfig(flags: Partial<Config>): Config {
   };
 }
 
-export { CONFIG_PATH };

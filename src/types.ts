@@ -105,7 +105,7 @@ export type VaultIndex = Map<string, { path: string; data: Record<string, unknow
 
 /** Options for validation */
 export type ValidateOptions = {
-  /** Frontmatter field name that identifies entity type (default: "type_key") */
+  /** Frontmatter field name that identifies entity type (default: "entity") */
   typeKeyField?: string;
   /** Default entity type if typeKeyField is missing (empty = skip file) */
   defaultEntityType?: string;

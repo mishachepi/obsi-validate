@@ -1,5 +1,5 @@
 {
-	"name": "property-validator",
+	"name": "obsi-validate",
 	"version": "0.1.0",
 	"description": "Obsidian plugin: validate vault frontmatter against entity/property schemas",
 	"main": "main.js",
@@ -12,6 +12,7 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"build:cli": "bun build src/cli.ts src/index.ts --outdir dist --target bun",
 		"test": "bun test",
+		"lint": "tsc -noEmit -skipLibCheck",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [

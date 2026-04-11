@@ -479,7 +479,7 @@ function renderNewPropertyForm(
   let minValue: number | undefined;
   let maxValue: number | undefined;
   let customValidator = "";
-  let newLinkConstraints: { target_type_key?: string; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } = {};
+  let newLinkConstraints: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } = {};
 
   new Setting(form).setName("Name").addText((text) =>
     text.setPlaceholder("e.g. status").onChange((val) => {

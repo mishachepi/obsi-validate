@@ -29,8 +29,8 @@ Entity-centric, three-level validation with inheritance:
 Core modules (`types.ts`, `schema.ts`, `validate.ts`) are runtime-agnostic — accept `{path, content}[]`, no file reads.
 
 See [docs/architecture.md](docs/architecture.md) for diagrams and data flow.
-See [docs/schema.md](docs/schema.md) for entity/property file format.
-See [docs/plugin.md](docs/plugin.md) for plugin usage.
+See [docs/schema-reference.md](docs/schema-reference.md) for entity/property file format.
+See [docs/getting-started.md](docs/getting-started.md) for plugin usage.
 
 ## Tech Stack
 

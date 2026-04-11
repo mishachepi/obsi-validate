@@ -1,194 +1,134 @@
 # Architecture
 
-## Core Principle
+> For user-facing docs, see [Getting started](getting-started.md).
 
-Vault = schema + data. Schema is defined in the vault itself via entity and property files. The validator invents nothing — all rules come from YAML frontmatter.
+## Core idea
 
-**Entity** = structure (which fields, required/optional, allow_extra)
-**Property** = validation (type, constraints, link targets, custom JS)
-
-Dependency is one-way: entity -> property. Properties know nothing about entities.
-
-## Module Structure
-
-```
-src/
-  # Core library (runtime-agnostic, no file I/O)
-  types.ts                    # All types: RawFile, VaultSchema, ValidateOptions, etc.
-  schema.ts                   # Parse entity/property files -> entityMap + Zod + inheritance
-  validate.ts                 # Three-level validation + link constraints + custom JS
-  index.ts                    # Library entry point (re-exports)
-  cli.ts                      # CLI entry point (only module with fs access)
-  config.ts                   # CLI config resolution
-
-  # Obsidian plugin
-  plugin-main.ts              # Plugin class: commands, ribbon, status bar, events
-  bridge.ts                   # TFile <-> RawFile adapter, vault index, file writes
-  constants.ts                # Settings interface, defaults
-  SettingsTab.ts              # Tabbed settings UI (Settings, Entities, Properties)
-  ResultsView.ts              # Per-file validation results panel
-  VaultResultsView.ts         # Full vault scan results panel
-  ui/
-    TabManager.ts             # Generic tab navigation component
-    EntitiesTab.ts            # Entity CRUD UI with inheritance
-    PropertiesTab.ts          # Property CRUD UI with link constraints
-    yamlWriter.ts             # YAML frontmatter serializer
-    empty-fs.ts               # fs shim for gray-matter in browser
-
-# Root (official Obsidian plugin layout)
-manifest.json                 # Plugin manifest
-styles.css                    # Plugin styles
-esbuild.config.mjs            # Build config
-```
-
-## Two Consumers, One Core
-
-```
-                    ┌─────────────────┐
-                    │   Core Library   │
-                    │ schema.ts        │
-                    │ validate.ts      │
-                    │ types.ts         │
-                    └────────┬────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-     ┌────────▼──────┐  ┌───▼──────┐  ┌───▼──────────┐
-     │   CLI          │  │ Plugin   │  │ Future       │
-     │ cli.ts         │  │ bridge.ts│  │ integrations │
-     │ fs.readFile()  │  │ cachedRead│  │              │
-     └───────────────┘  └──────────┘  └──────────────┘
-```
-
-Core accepts `RawFile[] = { path: string, content: string }[]` — who reads the files is irrelevant. CLI uses `fs`, plugin uses Obsidian Vault API.
-
-## Entity Inheritance
-
-Entities support single inheritance via `extends`. The schema loader resolves the full chain and merges properties (parent first, child overrides). Circular dependencies are detected at load time.
-
-```
-base → trackable → structure → task
-                              → epic
-                              → area
-       trackable → rhythm    → day
-                              → sprint
-       trackable → cmdb      → book
-                              → service
-```
-
-Each entity file stores only its **own** properties. The `entityMap` contains the fully resolved set.
-
-## Entity-Centric Schema
+Your vault contains two things: **schema** (how notes should look) and **data** (the notes themselves). The plugin reads the schema, then checks every note against it.
 
 ```mermaid
 flowchart LR
-    subgraph Entity["task_entity.md"]
-        E["properties:<br/>  status: { required: true }<br/>  priority: {}<br/>  area: {}"]
+    S["Schema files<br/>(entities + properties)"] --> P["Plugin"]
+    N["Your notes"] --> P
+    P --> R["Validation results"]
+```
+
+---
+
+## Entities and properties
+
+**Entities** define structure — which fields a note type has.
+**Properties** define rules — how to validate each field's value.
+
+Entities reference properties, but properties don't know about entities. This means one property (e.g. `status`) can be reused across many entity types.
+
+```mermaid
+flowchart LR
+    subgraph Entity["task entity"]
+        E["status (required)<br/>priority<br/>area"]
     end
 
     subgraph Properties
-        S["status_property.md<br/>type: enum<br/>allowed_values: [...]"]
-        P["priority_property.md<br/>type: enum"]
-        A["area_property.md<br/>type: link<br/>target_type_key: area"]
+        S["status<br/>enum: Backlog, In Progress, Done"]
+        PR["priority<br/>enum: Low, Medium, High"]
+        A["area<br/>link → must be area entity"]
     end
 
-    E -->|references| S
-    E -->|references| P
-    E -->|references| A
+    E --> S
+    E --> PR
+    E --> A
 ```
 
-## Three-Level Validation
+---
+
+## How validation works
+
+When you open or save a note, the plugin runs three checks in order:
 
 ```mermaid
 flowchart TB
-    F["File: my-task.md<br/>type_key: task<br/>status: In Progress<br/>area: '[[Work]]'<br/>foo: bar"]
-
-    L1["<b>Level 1: Entity</b><br/>task allows: status, priority, area, ...<br/><br/>foo not in list -> <b>warning</b><br/>status missing & required -> <b>error</b>"]
-
-    L2["<b>Level 2: Property</b><br/>status: enum -> In Progress OK<br/>area: link -> [[Work]] OK"]
-
-    L3["<b>Level 3: Constraints</b><br/>Link: area target_type_key=area -> check Work note<br/>Custom JS validator -> run expression"]
-
-    R["ValidationResult<br/><b>errors</b> + <b>warnings</b>"]
-
-    F --> L1 --> L2 --> L3 --> R
+    N["Your note"] --> L1
+    L1["1. Structure<br/>Are the fields recognized?<br/>Are required fields present?"]
+    L1 --> L2["2. Types<br/>Do the values match the property type?<br/>(enum, number, date, etc.)"]
+    L2 --> L3["3. Constraints<br/>Do linked notes satisfy requirements?<br/>Do custom validators pass?"]
+    L3 --> R["Result:<br/>errors (blocking) + warnings (informational)"]
 ```
 
-**Warning** = field not in schema (non-blocking). **Error** = invalid value, missing required, or failed constraint (blocking).
+---
 
-## Data Flow
-
-```mermaid
-sequenceDiagram
-    participant IO as CLI / Plugin<br/>(file I/O)
-    participant S as schema.ts<br/>(parse + build)
-    participant V as validate.ts<br/>(check)
-
-    IO->>S: loadSchema(entityFiles[], propertyFiles[])
-
-    Note over S: parseEntities() -> EntitySchema[]
-    Note over S: parseProperties() -> PropertySchema[] + Zod
-    Note over S: Build entityMap + allowExtraMap
-
-    S-->>IO: VaultSchema
-
-    IO->>V: validateFiles(targetFiles[], schema, options)
-
-    Note over V: For each file:
-    Note over V: 1. Parse frontmatter (gray-matter)
-    Note over V: 2. Lookup entity type in entityMap
-    Note over V: 3. Check known/unknown fields
-    Note over V: 4. Zod.safeParse() each value
-    Note over V: 5. Link constraints (if vaultIndex)
-    Note over V: 6. Custom JS validator
-    Note over V: 7. Required fields check
-
-    V-->>IO: ValidationSummary
-```
-
-## Plugin Architecture
+## Plugin components
 
 ```mermaid
 flowchart TB
-    subgraph Obsidian
-        VA[Vault API<br/>TFile, cachedRead]
-        WS[Workspace<br/>ItemView, commands]
+    subgraph What you see
+        SB["Status bar<br/>colored dot + entity type"]
+        RP["Results panel<br/>errors and warnings"]
+        ST["Settings UI<br/>3 tabs: Settings, Entities, Properties"]
     end
 
-    subgraph Plugin
-        M[main.ts<br/>Plugin class]
-        B[bridge.ts<br/>TFile->RawFile adapter]
-        RV[ResultsView.ts<br/>Per-file results]
-        VRV[VaultResultsView.ts<br/>Vault scan results]
-        ST[SettingsTab.ts<br/>3-tab settings]
+    subgraph What happens inside
+        SC["Schema loader<br/>reads entity/property files,<br/>resolves inheritance"]
+        VL["Validator<br/>checks notes against schema"]
     end
 
-    subgraph Core
-        SC[schema.ts]
-        VL[validate.ts]
-    end
-
-    VA --> B
-    B --> SC
-    B --> VL
-    M --> B
-    M --> RV
-    M --> ST
-    WS --> M
+    ST -->|"manages"| SC
+    SC -->|"schema"| VL
+    VL -->|"results"| SB
+    VL -->|"results"| RP
 ```
 
-## property_type -> Zod Mapping
+- **Schema loader** — reads your entity and property files, resolves inheritance chains, builds validation rules
+- **Validator** — checks each note's frontmatter against the schema
+- **Results panel** — shows errors and warnings, with clickable links to fields and notes
+- **Settings UI** — create, edit, and archive entities and properties without touching files
 
-| property_type | Zod | Notes |
-|---------------|-----|-------|
-| `string` | `z.string()` | |
-| `number` | `z.number().min().max()` | min/max from frontmatter |
-| `boolean` | `z.boolean()` | |
-| `date` | `z.union([z.string(), z.date()])` | gray-matter may return JS Date |
-| `time` | `z.string()` | |
-| `datetime` | `z.union([z.string(), z.date()])` | |
-| `enum` | `z.preprocess(coerce, z.enum([...]))` | numbers coerced to strings |
-| `link` | `z.string()` | single link + optional link constraints |
-| `links` | `z.array(z.string())` | multiple links + optional link constraints |
-| `list` | `z.array(z.unknown())` | array of any values |
-| `emoji` | `z.string()` | |
+---
+
+## Reactive behavior
+
+The plugin stays in sync automatically:
+
+1. You edit a note — plugin revalidates it (debounced 800ms)
+2. You switch files — plugin validates the new file
+3. You change a schema file — plugin reloads the schema and revalidates
+4. You edit via Settings UI — schema file updates, cache refreshes
+
+---
+
+## Entity inheritance
+
+Entities can extend other entities. The plugin resolves the full chain at load time:
+
+```mermaid
+flowchart LR
+    A["trackable<br/>status, created, updated"] --> B["structure<br/>+ area, description"]
+    B --> C["task<br/>+ priority, estimate"]
+    B --> D["epic<br/>+ deadline"]
+```
+
+`task` gets all 7 properties: own + inherited. Child properties override parent's config. Circular inheritance is detected and reported as an error.
+
+---
+
+## Security
+
+!!! warning
+    Custom validators execute JavaScript in the same trust context as your vault. Only use validators from sources you trust.
+
+The plugin operates within your own vault. Schema files are authored by the vault owner and stored as regular markdown.
+
+**Custom validators** (`custom_validator` field) run JS expressions at validation time. The expression receives only the field `value` and has no access to other files or APIs. See [Schema reference > Custom validators](schema-reference.md#custom-validators) for usage.
+
+**File operations**: the plugin reads files via Obsidian's Vault API and writes only to `{schema_dir}/entities/` and `{schema_dir}/properties/`. Archive moves files to `_deprecated/` (no deletion).
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `gray-matter` | YAML frontmatter parsing |
+| `zod` | Value validation |
+| `commander` | CLI argument parsing (not bundled in plugin) |
+| `obsidian` | Plugin API (provided by Obsidian) |
+| `esbuild` | Build tool (dev only) |

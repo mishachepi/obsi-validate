@@ -33,11 +33,12 @@ obsi-validate --vault-dir /path/to/vault
 
 ## Docs
 
-- [Plugin usage](docs/plugin.md) — installation, settings, commands, schema management
-- [Schema reference](docs/schema.md) — entity/property file format, types, inheritance, link constraints
-- [CLI usage](docs/usage.md) — options, config, env vars, library API
-- [Architecture](docs/architecture.md) — data flow, modules, design decisions
-- [Security](docs/security.md) — trust model, custom validators, dependencies
+- [About](docs/index.md) — overview and key features
+- [Getting started](docs/getting-started.md) — installation and quick start tutorial
+- [Configuration](docs/configuration.md) — plugin settings and schema management UI
+- [Schema reference](docs/schema-reference.md) — entity/property file format, types, validation logic
+- [CLI](docs/cli.md) — command-line usage
+- [Architecture](docs/architecture.md) — data flow, modules, security
 
 ## TODO
 

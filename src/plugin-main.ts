@@ -1,6 +1,6 @@
 import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
-import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
-import { ensureSchema, bridgeValidateFile, bridgeValidateVault } from "./bridge";
+import type { VaultSchema, VaultIndex, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
+import { ensureSchema, bridgeValidateFile, bridgeValidateVault, buildVaultIndex } from "./bridge";
 import { ResultsView } from "./ResultsView";
 import { VaultResultsView } from "./VaultResultsView";
 import { ObsiValidateSettingTab } from "./SettingsTab";
@@ -20,6 +20,7 @@ export default class ObsiValidatePlugin extends Plugin {
   schemaLoading: Promise<VaultSchema> | null = null;
   lastResult: ValidationResult | null = null;
   private settingsTab: ObsiValidateSettingTab | null = null;
+  private vaultIndex: VaultIndex | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -69,6 +70,14 @@ export default class ObsiValidatePlugin extends Plugin {
     // Status bar
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass("obsi-validate-statusbar");
+    this.statusBarEl.addEventListener("click", () => {
+      if (this.lastResult) {
+        this.activateResultsView().then(() => {
+          const view = this.getResultsView();
+          if (view) view.renderSingleResult(this.lastResult!);
+        });
+      }
+    });
     this.renderStatusBar();
 
     // Settings tab
@@ -77,7 +86,8 @@ export default class ObsiValidatePlugin extends Plugin {
 
     // Watch file changes
     const isSchemaFile = (path: string) => {
-      const base = this.settings.schemaDir === "." ? "" : this.settings.schemaDir + "/";
+      const dir = this.settings.schemaDir;
+      const base = (!dir || dir === ".") ? "" : dir + "/";
       return path.startsWith(`${base}entities/`) || path.startsWith(`${base}properties/`);
     };
 
@@ -86,8 +96,8 @@ export default class ObsiValidatePlugin extends Plugin {
         if (isSchemaFile(file.path)) {
           this.schema = null; this.schemaLoading = null;
         }
-        // Re-validate active file on any modify (debounced)
         if (file instanceof TFile && file.extension === "md") {
+          this.vaultIndex = null;
           this.debouncedRevalidate();
         }
       }),
@@ -95,11 +105,13 @@ export default class ObsiValidatePlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("delete", (file: TAbstractFile) => {
         if (isSchemaFile(file.path)) { this.schema = null; this.schemaLoading = null; }
+        this.vaultIndex = null;
       }),
     );
     this.registerEvent(
       this.app.vault.on("create", (file: TAbstractFile) => {
         if (isSchemaFile(file.path)) { this.schema = null; this.schemaLoading = null; }
+        this.vaultIndex = null;
       }),
     );
 
@@ -179,11 +191,13 @@ export default class ObsiValidatePlugin extends Plugin {
       return;
     }
 
+    const vaultIndex = await this.getVaultIndex(schema);
     const result = await bridgeValidateFile(
       this.app,
       activeFile,
       schema,
       this.validateOptions(),
+      vaultIndex ?? undefined,
     );
 
     this.lastResult = result;
@@ -192,6 +206,15 @@ export default class ObsiValidatePlugin extends Plugin {
     // Update results panel if it's open
     const view = this.getResultsView();
     if (view) view.renderSingleResult(result);
+  }
+
+  /** Get cached vault index, building it only if needed */
+  private async getVaultIndex(schema: VaultSchema): Promise<VaultIndex | null> {
+    const hasLinkConstraints = schema.properties.some((p) => p.link_constraints);
+    if (!hasLinkConstraints) return null;
+    if (this.vaultIndex) return this.vaultIndex;
+    this.vaultIndex = await buildVaultIndex(this.app);
+    return this.vaultIndex;
   }
 
   // --- Status bar ---
@@ -220,15 +243,6 @@ export default class ObsiValidatePlugin extends Plugin {
       cls: "obsi-validate-sb-entity",
     });
 
-    // Click → open results
-    this.statusBarEl.addEventListener("click", () => {
-      if (this.lastResult) {
-        this.activateResultsView().then(() => {
-          const view = this.getResultsView();
-          if (view) view.renderSingleResult(this.lastResult!);
-        });
-      }
-    });
   }
 
   // --- Commands ---
@@ -265,11 +279,13 @@ export default class ObsiValidatePlugin extends Plugin {
       return;
     }
 
+    const vaultIndex = await this.getVaultIndex(schema);
     const result = await bridgeValidateFile(
       this.app,
       activeFile,
       schema,
       this.validateOptions(),
+      vaultIndex ?? undefined,
     );
 
     this.lastResult = result;

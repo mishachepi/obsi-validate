@@ -7,6 +7,24 @@ import {
   propertyFilePath,
 } from "../bridge";
 
+/** Filter schema list items and folder headings by search query */
+export function filterSchemaList(query: string, listEl: HTMLElement): void {
+  const q = query.toLowerCase();
+  listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
+    const name = (el as HTMLElement).dataset.name ?? "";
+    (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
+  });
+  listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {
+    let hasVisible = false;
+    let sib = el.nextElementSibling;
+    while (sib && sib.classList.contains("obsi-validate-schema-item")) {
+      if ((sib as HTMLElement).style.display !== "none") hasVisible = true;
+      sib = sib.nextElementSibling;
+    }
+    (el as HTMLElement).style.display = hasVisible ? "" : "none";
+  });
+}
+
 /** Validate a schema name (entity or property) */
 export function isValidSchemaName(name: string): string | null {
   if (!name) return "Name is required";
@@ -70,22 +88,7 @@ export async function renderPropertiesTab(
     cls: "obsi-validate-search",
   });
   searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase();
-    listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
-      const name = (el as HTMLElement).dataset.name ?? "";
-      (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
-    });
-    listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {
-      const next = el.nextElementSibling;
-      // Hide heading if all items in group are hidden
-      let hasVisible = false;
-      let sib = next;
-      while (sib && sib.classList.contains("obsi-validate-schema-item")) {
-        if ((sib as HTMLElement).style.display !== "none") hasVisible = true;
-        sib = sib.nextElementSibling;
-      }
-      (el as HTMLElement).style.display = hasVisible ? "" : "none";
-    });
+    filterSchemaList(searchInput.value, listEl);
   });
 
   const listEl = containerEl.createDiv({ cls: "obsi-validate-schema-list" });
@@ -303,7 +306,7 @@ function renderPropertyItem(
 
   archiveBtn.addEventListener("click", () => {
     new ConfirmArchiveModal(plugin.app, "property", prop.name, async () => {
-      const path = propertyFilePath(plugin.settings.schemaDir, prop.name);
+      const path = prop.sourcePath ?? propertyFilePath(plugin.settings.schemaDir, prop.name);
       try {
         await deprecateSchemaFile(plugin.app, path);
         plugin.schema = null;
@@ -483,7 +486,7 @@ function renderNewPropertyForm(
 
   new Setting(form).setName("Name").addText((text) =>
     text.setPlaceholder("e.g. status").onChange((val) => {
-      name = val.trim().toLowerCase().replace(/\s+/g, "_");
+      name = val.trim().replace(/\s+/g, "_");
     }),
   );
 

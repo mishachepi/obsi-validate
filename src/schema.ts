@@ -264,7 +264,7 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.array(z.unknown());
 
     case "emoji":
-      return z.string();
+      return z.string().emoji({ message: "Must be an emoji" });
 
     default:
       return z.unknown();

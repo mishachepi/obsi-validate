@@ -1,74 +1,52 @@
-# obsi-validate
+# Property Validator
 
-Validates Obsidian vault frontmatter against schemas defined in the vault itself. No external config — schema lives as YAML frontmatter in entity/property files.
+Obsidian plugin that validates vault frontmatter against schemas defined in the vault itself. No external config — schema lives as YAML frontmatter in entity/property files.
+
+## Features
+
+- Entity-centric schema: entities declare fields, properties define validation rules
+- Entity inheritance via `extends` (with circular dependency detection)
+- Three-level validation: structure, Zod types, link constraints + custom JS
+- Reactive status bar with per-file validation
+- Settings UI with 3 tabs: Settings, Entities, Properties
+- Entity/Property CRUD with auto-save
+- Link constraints: validate what linked notes must satisfy
+- Folder-based grouping
 
 ## Install
 
 ```bash
-git clone <repo-url> && cd obsi-pydantic
-bun install && bun run build && bun link
+git clone <repo-url> && cd property-validator
+npm install && npm run build
 ```
 
-## Configure
+Copy `main.js`, `manifest.json`, `styles.css` to `.obsidian/plugins/property-validator/` in your vault.
+
+## CLI
+
+Also works as a standalone CLI:
 
 ```bash
-mkdir -p ~/.config/obsi-validate
-cat > ~/.config/obsi-validate/config.json << 'EOF'
-{
-  "schema_dir": "/path/to/vault/Notes/System",
-  "vault_dir": "/path/to/vault"
-}
-EOF
+npm run build:cli && bun link
+obsi-validate --vault-dir /path/to/vault
 ```
-
-`schema_dir` — directory containing `entities/` and `properties/` subdirectories.
-
-## Usage
-
-```bash
-obsi-validate                    # validate entire vault
-obsi-validate /path/to/tasks     # validate directory
-obsi-validate /path/to/file.md   # validate single file
-obsi-validate -t task            # filter by entity type
-obsi-validate -f json            # JSON output
-```
-
-## How It Works
-
-**Entity files** define structure (which fields, required/optional).
-**Property files** define validation (type, constraints).
-Vault files are matched by `type_key` in frontmatter.
-
-```
-Level 1: Does this entity allow this field?     → warning if not
-Level 2: Is the value valid for this type?       → error if not
-Level 3: Are all required fields present?        → error if not
-```
-
-```
-FAIL tasks/broken.md [task]
-  ✗ status: Invalid enum value
-  ✗ estimate: Number must be <= 8
-
-Total: 349 | Valid: 259 | Invalid: 74 | Skipped: 16
-```
-
-Exit code `1` if any files are invalid.
-
-## Library
-
-```typescript
-import { loadSchema, validateFile } from "obsi-validate"
-```
-
-Core modules are runtime-agnostic — accept `{path, content}[]`. Reusable in Obsidian plugin.
 
 ## Docs
 
-- [Schema reference](docs/schema.md) — entity/property file format, supported types
-- [CLI usage](docs/usage.md) — options, config, env vars, examples
-- [Architecture](docs/architecture.md) — data flow, modules, design decisions
+- [About](docs/index.md) — overview and key features
+- [Getting started](docs/getting-started.md) — installation and quick start tutorial
+- [Configuration](docs/configuration.md) — plugin settings and schema management UI
+- [Schema reference](docs/schema-reference.md) — entity/property file format, types, validation logic
+- [CLI](docs/cli.md) — command-line usage
+- [Architecture](docs/architecture.md) — data flow, modules, security
+
+## TODO
+
+- [ ] Improve entity inheritance (inherit allow_extra, multi-level UI display, abstract entities)
+- [ ] Inline decorations: red underline on invalid frontmatter values, hover tooltips
+- [ ] Quick-fix suggestions for enum values (fuzzy match "Did you mean...?")
+- [ ] Autofix suggestions: `"true"` to `true`, array to string, string to array, type coercion
 
 ## Tech Stack
 
-Bun, Zod, gray-matter, commander
+TypeScript, esbuild, Zod, gray-matter, Obsidian API

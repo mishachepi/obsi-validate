@@ -10,6 +10,9 @@ async function getSchema() {
   return loadSchema(entityFiles, propertyFiles);
 }
 
+// Test fixtures use "type_key" as the entity field
+const opts = { typeKeyField: "type_key" };
+
 describe("validateFile", () => {
   test("valid task file passes", async () => {
     const schema = await getSchema();
@@ -26,7 +29,7 @@ describe("validateFile", () => {
       ].join("\n"),
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
     expect(result.entityType).toBe("task");
@@ -39,7 +42,7 @@ describe("validateFile", () => {
       content: "---\ntype_key: task\nstatus: InvalidStatus\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0].field).toBe("status");
@@ -52,7 +55,7 @@ describe("validateFile", () => {
       content: "---\ntype_key: task\nstatus: Done\nestimate: 20\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.valid).toBe(false);
     expect(result.errors[0].field).toBe("estimate");
   });
@@ -65,7 +68,7 @@ describe("validateFile", () => {
         "---\ntype_key: task\nstatus: Done\nnonexistent_field: hello\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.valid).toBe(true);
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(result.warnings[0].field).toBe("nonexistent_field");
@@ -78,7 +81,7 @@ describe("validateFile", () => {
       content: "---\ntitle: Just a note\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.entityType).toBeNull();
     expect(result.warnings[0].message).toContain("Missing type_key");
   });
@@ -90,7 +93,7 @@ describe("validateFile", () => {
       content: "---\ntype_key: spaceship\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.warnings[0].message).toContain("Unknown entity type");
   });
 
@@ -101,7 +104,7 @@ describe("validateFile", () => {
       content: "---\ntype_key: task\npriority: High\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.valid).toBe(false);
     const statusError = result.errors.find((e) => e.field === "status");
     expect(statusError).toBeDefined();
@@ -115,7 +118,7 @@ describe("validateFile", () => {
       content: "---\ntype_key: task\nstatus: Backlog\n---",
     };
 
-    const result = validateFile(file, schema);
+    const result = validateFile(file, schema, opts);
     expect(result.valid).toBe(true);
   });
 
@@ -128,7 +131,7 @@ describe("validateFile", () => {
       },
     ];
 
-    const summary = validateFiles(files, schema);
+    const summary = validateFiles(files, schema, opts);
     expect(summary.invalid).toBe(1);
     expect(summary.skipped).toBe(0);
   });
@@ -149,7 +152,7 @@ describe("validateFile", () => {
         "---\ntype_key: task\nstatus: Done\nrandom_field: hello\n---",
     };
 
-    const result = validateFile(file, testSchema);
+    const result = validateFile(file, testSchema, opts);
     expect(result.valid).toBe(true);
     expect(result.warnings).toHaveLength(0);
   });
@@ -171,7 +174,7 @@ describe("validateFile", () => {
       content: "---\ntype_key: task\nstatus: Done\ncustom_field: anything\n---",
     };
 
-    const result = validateFile(file, testSchema);
+    const result = validateFile(file, testSchema, opts);
     expect(result.valid).toBe(true);
     expect(result.warnings).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
@@ -190,7 +193,7 @@ describe("validateFiles", () => {
       { path: "skipped.md", content: "---\ntitle: hi\n---" },
     ];
 
-    const summary = validateFiles(files, schema);
+    const summary = validateFiles(files, schema, opts);
     expect(summary.total).toBe(3);
     expect(summary.valid).toBe(1);
     expect(summary.invalid).toBe(1);

@@ -2,45 +2,44 @@
 
 ## Project Overview
 
-TypeScript CLI + library (`obsi-validate`) that validates Obsidian vault frontmatter against schemas defined in the vault's own entity/property files. Designed for dual use: standalone CLI and Obsidian plugin module.
+**Property Validator** — Obsidian plugin + CLI that validates vault frontmatter against schemas defined in the vault's own entity/property files. Entity-centric architecture with inheritance support.
 
 ## Build & Development
 
 ```bash
-bun install                          # install dependencies
+npm install                          # install dependencies
+npm run dev                          # build plugin with watch mode
+npm run build                        # production build (type-check + minified)
 bun test                             # run all tests
 bun test tests/schema.test.ts        # run single test file
 bun run src/cli.ts --vault-dir <path> # run CLI in dev
-bun run build                        # build dist/ (cli.js + index.js)
+npm run build:cli                    # build CLI dist/ (cli.js + index.js)
 ```
 
 ## Architecture
 
-Entity-centric, two-level validation: **schema.ts -> validate.ts -> cli.ts**
+Entity-centric, three-level validation with inheritance:
 
-1. **schema.ts** — parses entity/property YAML frontmatter, builds Zod validators, constructs `entityMap`
-2. **validate.ts** — Level 1: fields vs entity schema. Level 2: values via Zod. Level 3: required fields.
-3. **cli.ts** — file I/O (only module with fs access), commander CLI, output formatting
-4. **index.ts** — library entry point, re-exports core API
+1. **schema.ts** — parses entity/property YAML, builds Zod validators, resolves entity inheritance, constructs `entityMap`
+2. **validate.ts** — Level 1: fields vs entity schema. Level 2: values via Zod. Level 3: link constraints + custom validators + required fields.
+3. **plugin-main.ts** — Obsidian plugin class, commands, reactive validation, status bar
+4. **bridge.ts** — TFile ↔ RawFile adapter, vault index for link validation, file writes
+5. **cli.ts** — CLI entry point (commander, file I/O, output formatting)
 
-Core modules (`types.ts`, `schema.ts`, `validate.ts`) are runtime-agnostic — accept `{path, content}[]`, no file reads. This enables reuse in Obsidian plugin.
+Core modules (`types.ts`, `schema.ts`, `validate.ts`) are runtime-agnostic — accept `{path, content}[]`, no file reads.
 
 See [docs/architecture.md](docs/architecture.md) for diagrams and data flow.
-See [docs/schema.md](docs/schema.md) for entity/property file format.
-
-## Vault Location
-
-Schema source: `/Volumes/mch/`, symlinked via `vault/entities/` and `vault/properties/`.
+See [docs/schema-reference.md](docs/schema-reference.md) for entity/property file format.
+See [docs/getting-started.md](docs/getting-started.md) for plugin usage.
 
 ## Tech Stack
 
-Bun (runtime, test runner), Zod, gray-matter, commander
+Bun (test runner), esbuild (bundler), TypeScript, Zod, gray-matter, commander (CLI only)
 
-## Phase 1 Scope (current)
+## Project Structure
 
-Implemented: schema loader, validator, CLI, library entry point.
-
-Do NOT implement yet:
-- Entity inheritance (Phase 3)
-- Obsidian plugin wrapper (Phase 2)
-- Cross-entity validation (Phase 3)
+Follows [official Obsidian plugin layout](https://docs.obsidian.md/Plugins/Getting+started/Build+a+plugin):
+- `manifest.json`, `styles.css`, `esbuild.config.mjs` at root
+- `src/plugin-main.ts` — plugin entry point
+- `src/` — all source (core library + plugin)
+- `main.js` — built output (not committed, in .gitignore)

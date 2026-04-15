@@ -1,189 +1,134 @@
 # Architecture
 
-## Принцип
+> For user-facing docs, see [Getting started](getting-started.md).
 
-Vault = schema + data. Schema описана в самом vault через entity и property файлы. Валидатор ничего не придумывает — все правила из YAML frontmatter.
+## Core idea
 
-**Entity** = структура (какие поля, required/optional)
-**Property** = валидация (тип, ограничения)
-
-Зависимость однонаправленная: entity → property. Property ничего не знает о entities.
-
-## Entity-centric подход
+Your vault contains two things: **schema** (how notes should look) and **data** (the notes themselves). The plugin reads the schema, then checks every note against it.
 
 ```mermaid
 flowchart LR
-    subgraph Entity["task_entity.md"]
-        E["properties:<br/>  status: { required: true }<br/>  priority: {}<br/>  estimate: {}"]
+    S["Schema files<br/>(entities + properties)"] --> P["Plugin"]
+    N["Your notes"] --> P
+    P --> R["Validation results"]
+```
+
+---
+
+## Entities and properties
+
+**Entities** define structure — which fields a note type has.
+**Properties** define rules — how to validate each field's value.
+
+Entities reference properties, but properties don't know about entities. This means one property (e.g. `status`) can be reused across many entity types.
+
+```mermaid
+flowchart LR
+    subgraph Entity["task entity"]
+        E["status (required)<br/>priority<br/>area"]
     end
 
     subgraph Properties
-        S["status.md<br/>type: enum<br/>allowed_values: [...]"]
-        P["priority.md<br/>type: enum"]
-        EST["estimate.md<br/>type: number<br/>max_value: 8"]
+        S["status<br/>enum: Backlog, In Progress, Done"]
+        PR["priority<br/>enum: Low, Medium, High"]
+        A["area<br/>link → must be area entity"]
     end
 
-    E -->|ссылается| S
-    E -->|ссылается| P
-    E -->|ссылается| EST
+    E --> S
+    E --> PR
+    E --> A
 ```
 
-Entity файл объявляет свои поля и required флаги. Property файл описывает как валидировать значение. Одно property может использоваться несколькими entities (например `status` — в task, book, area), но property об этом не знает.
+---
 
-## Двухуровневая валидация
+## How validation works
+
+When you open or save a note, the plugin runs three checks in order:
 
 ```mermaid
 flowchart TB
-    F["Файл: my-task.md<br/><code>type_key: task</code><br/><code>status: In Progress</code><br/><code>estimate: 4</code><br/><code>foo: bar</code>"]
-
-    L1["<b>Level 1: Entity</b><br/>task допускает: status, priority, estimate, area, ...<br/><br/>foo — не в списке → <b>warning</b><br/>status отсутствует и required → <b>error</b>"]
-
-    L2["<b>Level 2: Property</b><br/>status: enum → In Progress ✓<br/>estimate: number max:8 → 4 ✓"]
-
-    R["ValidationResult<br/><b>errors</b> + <b>warnings</b>"]
-
-    F --> L1 --> L2 --> R
+    N["Your note"] --> L1
+    L1["1. Structure<br/>Are the fields recognized?<br/>Are required fields present?"]
+    L1 --> L2["2. Types<br/>Do the values match the property type?<br/>(enum, number, date, etc.)"]
+    L2 --> L3["3. Constraints<br/>Do linked notes satisfy requirements?<br/>Do custom validators pass?"]
+    L3 --> R["Result:<br/>errors (blocking) + warnings (informational)"]
 ```
 
-**Warning** = поле не в schema (не блокирует). **Error** = значение невалидно или required отсутствует (блокирует).
+---
 
-## Поток данных
+## Plugin components
 
 ```mermaid
-sequenceDiagram
-    participant CLI as cli.ts<br/>(file I/O)
-    participant S as schema.ts<br/>(parse + build)
-    participant V as validate.ts<br/>(check)
-
-    Note over CLI: Чтение файлов с диска
-    CLI->>S: loadSchema(entityFiles[], propertyFiles[])
-
-    Note over S: 1. parseEntities()
-    S->>S: Каждый entity файл с component_type: entity<br/>→ EntitySchema { name, properties: { field: { required } } }
-
-    Note over S: 2. parseProperties()
-    S->>S: Каждый property файл<br/>→ PropertySchema { name, type, validator: Zod }
-
-    Note over S: 3. Построить entityMap
-    S->>S: Для каждого entity.properties<br/>найти PropertySchema + merge required flag<br/>→ Map﹤entityName, ResolvedProperty[]﹥
-
-    S-->>CLI: VaultSchema
-
-    CLI->>V: validateFiles(targetFiles[], schema)
-
-    loop Каждый .md файл
-        V->>V: gray-matter → parse frontmatter
-        V->>V: type_key → найти entity в entityMap
-        V->>V: Level 1: каждое поле → в списке properties?
-        V->>V: Level 2: каждое значение → Zod.safeParse()
-        V->>V: Required: все required поля присутствуют?
+flowchart TB
+    subgraph What you see
+        SB["Status bar<br/>colored dot + entity type"]
+        RP["Results panel<br/>errors and warnings"]
+        ST["Settings UI<br/>3 tabs: Settings, Entities, Properties"]
     end
 
-    V-->>CLI: ValidationSummary { total, valid, invalid, skipped, results[] }
-    CLI->>CLI: Форматировать pretty / JSON, exit code
+    subgraph What happens inside
+        SC["Schema loader<br/>reads entity/property files,<br/>resolves inheritance"]
+        VL["Validator<br/>checks notes against schema"]
+    end
+
+    ST -->|"manages"| SC
+    SC -->|"schema"| VL
+    VL -->|"results"| SB
+    VL -->|"results"| RP
 ```
 
-## Модули
+- **Schema loader** — reads your entity and property files, resolves inheritance chains, builds validation rules
+- **Validator** — checks each note's frontmatter against the schema
+- **Results panel** — shows errors and warnings, with clickable links to fields and notes
+- **Settings UI** — create, edit, and archive entities and properties without touching files
 
-```
-src/
-  types.ts      — RawFile, PropertySchema, EntitySchema, VaultSchema,
-                   ResolvedProperty, ValidationResult, ValidationSummary
-  schema.ts     — parseProperties(), parseEntities(), loadSchema()
-                   + buildPropertyValidator() → Zod
-  validate.ts   — validateFile(), validateFiles()
-  cli.ts        — readMdFiles(), formatPretty(), commander CLI
-```
-
-| Модуль | Что делает | File I/O | Runtime-agnostic |
-|--------|-----------|:--------:|:---:|
-| `types.ts` | Типы данных | нет | да |
-| `schema.ts` | Парсинг schema файлов → entityMap + Zod validators | нет | да |
-| `validate.ts` | Двухуровневая валидация frontmatter | нет | да |
-| `cli.ts` | Чтение файлов, CLI, форматирование вывода | **да** | нет |
-
-Core (`types`, `schema`, `validate`) принимают `RawFile[] = { path, content }[]`. Кто прочитал файлы — неважно. CLI делает это через `fs`, Obsidian plugin сделает через Vault API.
-
-## property_type → Zod
-
-Каждый property файл содержит `property_type` в frontmatter. `buildPropertyValidator()` компилирует его в Zod schema:
-
-| property_type | Zod | Почему так |
-|---------------|-----|-----------|
-| `string` | `z.string()` | — |
-| `number` | `z.number().min().max()` | min/max из frontmatter |
-| `boolean` | `z.boolean()` | — |
-| `date` | `z.union([z.string(), z.date()])` | gray-matter может отдать JS Date |
-| `time` | `z.string()` | — |
-| `enum` | `z.preprocess(coerce, z.enum([...]))` | YAML числа → строки |
-| `link` | `z.union([z.string(), z.array(z.string())])` | YAML single vs array |
-| `list` | `z.array(z.unknown())` | — |
-
-## Ключевые типы
-
-```typescript
-// Что entity знает о своих полях
-EntitySchema = {
-  name: "task"
-  properties: {
-    status: { required: true }
-    priority: {}
-    estimate: {}
-  }
-}
-
-// Как валидировать конкретное поле
-PropertySchema = {
-  name: "status"
-  property_type: "enum"
-  allowed_values: ["Backlog", "Planned", ...]
-  validator: ZodSchema  // скомпилированный
-}
-
-// Результат merge: property schema + required flag от entity
-ResolvedProperty = PropertySchema & { required: boolean }
-
-// entityMap: "task" → [
-//   { name: "status", type: "enum", required: true, validator: z.enum([...]) },
-//   { name: "priority", type: "enum", required: false, validator: z.enum([...]) },
-//   { name: "estimate", type: "number", required: false, validator: z.number().max(8) },
-// ]
-```
-
-## Vault schema файлы
-
-### Entity (`vault/entities/**/*_entity.md`)
-
-```yaml
 ---
-type_key: system_component
-component_type: entity          # ← фильтр: только entity
-properties:                     # ← какие поля допустимы
-  status: { required: true }    # ← required
-  priority: {}                  # ← optional (default)
-  estimate: {}
-  area: {}
+
+## Reactive behavior
+
+The plugin stays in sync automatically:
+
+1. You edit a note — plugin revalidates it (debounced 800ms)
+2. You switch files — plugin validates the new file
+3. You change a schema file — plugin reloads the schema and revalidates
+4. You edit via Settings UI — schema file updates, cache refreshes
+
 ---
-# Entity: Task
-(документация, dataview запросы, примеры — не парсятся)
+
+## Entity inheritance
+
+Entities can extend other entities. The plugin resolves the full chain at load time:
+
+```mermaid
+flowchart LR
+    A["trackable<br/>status, created, updated"] --> B["structure<br/>+ area, description"]
+    B --> C["task<br/>+ priority, estimate"]
+    B --> D["epic<br/>+ deadline"]
 ```
 
-Имя entity берётся из frontmatter `name:` или из filename: `task_entity.md` → `task`.
+`task` gets all 7 properties: own + inherited. Child properties override parent's config. Circular inheritance is detected and reported as an error.
 
-### Property (`vault/properties/*.md`)
-
-```yaml
 ---
-type_key: property
-name: status                    # ← имя property
-property_type: enum             # ← тип валидации
-allowed_values:                 # ← ограничения
-  - Backlog
-  - In Progress
-  - Done
----
-# status
-(документация — не парсится)
-```
 
-Property **не знает** какие entities его используют — нет `used_by`. Связь идёт от entity к property через `properties:` блок.
+## Security
+
+!!! warning
+    Custom validators execute JavaScript in the same trust context as your vault. Only use validators from sources you trust.
+
+The plugin operates within your own vault. Schema files are authored by the vault owner and stored as regular markdown.
+
+**Custom validators** (`custom_validator` field) run JS expressions at validation time. The expression receives only the field `value` and has no access to other files or APIs. See [Schema reference > Custom validators](schema-reference.md#custom-validators) for usage.
+
+**File operations**: the plugin reads files via Obsidian's Vault API and writes only to `{schema_dir}/entities/` and `{schema_dir}/properties/`. Archive moves files to `_deprecated/` (no deletion).
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `gray-matter` | YAML frontmatter parsing |
+| `zod` | Value validation |
+| `commander` | CLI argument parsing (not bundled in plugin) |
+| `obsidian` | Plugin API (provided by Obsidian) |
+| `esbuild` | Build tool (dev only) |

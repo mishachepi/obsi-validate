@@ -7,7 +7,7 @@ import {
   deprecateSchemaFile,
   entityFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, isValidSchemaName } from "./PropertiesTab";
+import { ConfirmArchiveModal, isValidSchemaName, filterSchemaList } from "./PropertiesTab";
 
 /** Render an editable property list into containerEl */
 function renderEditablePropList(
@@ -113,20 +113,7 @@ export async function renderEntitiesTab(
     cls: "obsi-validate-search",
   });
   searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase();
-    listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
-      const name = (el as HTMLElement).dataset.name ?? "";
-      (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
-    });
-    listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {
-      let hasVisible = false;
-      let sib = el.nextElementSibling;
-      while (sib && sib.classList.contains("obsi-validate-schema-item")) {
-        if ((sib as HTMLElement).style.display !== "none") hasVisible = true;
-        sib = sib.nextElementSibling;
-      }
-      (el as HTMLElement).style.display = hasVisible ? "" : "none";
-    });
+    filterSchemaList(searchInput.value, listEl);
   });
 
   const listEl = containerEl.createDiv({ cls: "obsi-validate-schema-list" });
@@ -285,7 +272,7 @@ function renderEntityItem(
   });
   const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
   addBtn.addEventListener("click", () => {
-    const name = selectEl.value || freeInput.value.trim().toLowerCase().replace(/\s+/g, "_");
+    const name = selectEl.value || freeInput.value.trim().replace(/\s+/g, "_");
     if (!name) return;
     if (name in properties) {
       new Notice(`Property "${name}" already added.`);
@@ -317,7 +304,7 @@ function renderEntityItem(
 
   archiveBtn.addEventListener("click", () => {
     new ConfirmArchiveModal(plugin.app, "entity", entity.name, async () => {
-      const path = entityFilePath(plugin.settings.schemaDir, entity.name);
+      const path = entity.sourcePath ?? entityFilePath(plugin.settings.schemaDir, entity.name);
       try {
         await deprecateSchemaFile(plugin.app, path);
         plugin.schema = null;
@@ -400,7 +387,7 @@ function renderNewEntityForm(
   });
   const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
   addBtn.addEventListener("click", () => {
-    const pName = selectEl.value || freeInput.value.trim().toLowerCase().replace(/\s+/g, "_");
+    const pName = selectEl.value || freeInput.value.trim().replace(/\s+/g, "_");
     if (!pName) return;
     if (pName in properties) {
       new Notice(`Property "${pName}" already added.`);

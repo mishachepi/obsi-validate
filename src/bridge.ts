@@ -84,11 +84,12 @@ export async function bridgeValidateFile(
   file: TFile,
   schema: VaultSchema,
   options?: ValidateOptions,
+  cachedVaultIndex?: VaultIndex,
 ): Promise<ValidationResult> {
   const rawFile = await tFileToRawFile(app, file);
   const hasLinkConstraints = schema.properties.some((p) => p.link_constraints);
   const opts = hasLinkConstraints
-    ? { ...options, vaultIndex: await buildVaultIndex(app) }
+    ? { ...options, vaultIndex: cachedVaultIndex ?? await buildVaultIndex(app) }
     : options;
   return validateFile(rawFile, schema, opts);
 }
@@ -101,12 +102,13 @@ export async function buildVaultIndex(app: App): Promise<VaultIndex> {
     const content = await app.vault.cachedRead(file);
     try {
       const data = matter(content).data;
-      const baseName = file.basename; // filename without extension
-      index.set(baseName, { path: file.path, data });
-      // Also index by full path without extension
+      const baseName = file.basename;
+      // Full path always wins (unique key)
       const pathNoExt = file.path.replace(/\.md$/, "");
-      if (pathNoExt !== baseName) {
-        index.set(pathNoExt, { path: file.path, data });
+      index.set(pathNoExt, { path: file.path, data });
+      // Basename only if no duplicate — first-wins for ambiguous short links
+      if (!index.has(baseName)) {
+        index.set(baseName, { path: file.path, data });
       }
     } catch {
       // Skip files with YAML errors
@@ -139,7 +141,9 @@ export async function bridgeValidateVault(
 
 /** Validate that a path doesn't escape the vault */
 function assertSafePath(path: string): void {
-  if (path.includes("..") || path.startsWith("/")) {
+  // Normalize redundant segments before checking
+  const normalized = path.replace(/\/\.\//g, "/").replace(/\/+/g, "/");
+  if (normalized.includes("..") || normalized.startsWith("/")) {
     throw new Error(`Unsafe path: ${path}`);
   }
 }

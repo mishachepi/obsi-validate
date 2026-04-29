@@ -176,11 +176,19 @@ function renderEntityItem(
 
   const summary = details.createEl("summary");
   summary.createSpan({ text: entity.name, cls: "obsi-validate-item-name" });
-  if (entity.folder) {
-    summary.createSpan({ text: entity.folder, cls: "obsi-validate-folder-badge" });
-  }
   if (entity.extends) {
-    summary.createSpan({ text: `\u2190 ${entity.extends}`, cls: "obsi-validate-extends-badge" });
+    const chain: string[] = [];
+    const seen = new Set<string>();
+    let current: string | undefined = entity.extends;
+    while (current && !seen.has(current)) {
+      chain.push(current);
+      seen.add(current);
+      current = schema.entities.find((e) => e.name === current)?.extends;
+    }
+    summary.createSpan({
+      text: chain.map((n) => `\u2190 ${n}`).join(" "),
+      cls: "obsi-validate-extends-badge",
+    });
   }
   summary.createSpan({
     text: inheritedCount > 0 ? `${ownCount}+${inheritedCount} props` : `${totalCount} props`,

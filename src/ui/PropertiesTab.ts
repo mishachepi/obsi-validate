@@ -145,12 +145,6 @@ function renderPropertyItem(
 
   const summary = details.createEl("summary");
   summary.createSpan({ text: prop.name, cls: "obsi-validate-item-name" });
-  if (prop.folder) {
-    summary.createSpan({
-      text: prop.folder,
-      cls: "obsi-validate-folder-badge",
-    });
-  }
   summary.createSpan({
     text: prop.property_type,
     cls: "obsi-validate-type-badge",

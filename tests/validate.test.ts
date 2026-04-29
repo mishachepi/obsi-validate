@@ -157,6 +157,56 @@ describe("validateFile", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
+  test("expected_folder constraint rejects file in wrong folder", async () => {
+    const schema = await getSchema();
+    const testSchema = {
+      ...schema,
+      expectedFolderMap: new Map([["task", "tasks"]]),
+    };
+
+    const file = {
+      path: "wrong/place.md",
+      content: "---\ntype_key: task\nstatus: Done\n---",
+    };
+
+    const result = validateFile(file, testSchema, opts);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].field).toBe("__path__");
+    expect(result.errors[0].message).toContain("tasks/");
+  });
+
+  test("expected_folder tolerates trailing slash in schema value", async () => {
+    const schema = await getSchema();
+    const testSchema = {
+      ...schema,
+      expectedFolderMap: new Map([["task", "tasks/"]]),
+    };
+
+    const file = {
+      path: "tasks/my-task.md",
+      content: "---\ntype_key: task\nstatus: Done\n---",
+    };
+
+    const result = validateFile(file, testSchema, opts);
+    expect(result.valid).toBe(true);
+  });
+
+  test("expected_folder constraint passes for correct folder", async () => {
+    const schema = await getSchema();
+    const testSchema = {
+      ...schema,
+      expectedFolderMap: new Map([["task", "tasks"]]),
+    };
+
+    const file = {
+      path: "tasks/my-task.md",
+      content: "---\ntype_key: task\nstatus: Done\n---",
+    };
+
+    const result = validateFile(file, testSchema, opts);
+    expect(result.valid).toBe(true);
+  });
+
   test("property without file is recognized but not validated", async () => {
     const schema = await getSchema();
     // Build a schema with an extra property that has no validator

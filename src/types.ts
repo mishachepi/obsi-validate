@@ -51,6 +51,8 @@ export type EntitySchema = {
   extends?: string;
   /** If true, extra fields not in properties don't produce warnings */
   allow_extra?: boolean;
+  /** Files with this entity type must be in this folder (prefix match) */
+  expected_folder?: string;
   /** Folder relative to entities dir (for UI grouping) */
   folder?: string;
   /** Original file path in vault (for writing back) */
@@ -72,6 +74,8 @@ export type VaultSchema = {
   entityMap: Map<string, ResolvedProperty[]>;
   /** Entity name → allow_extra flag */
   allowExtraMap: Map<string, boolean>;
+  /** Entity name → expected folder path */
+  expectedFolderMap: Map<string, string>;
 };
 
 /** Single validation error */

@@ -94,6 +94,19 @@ export function validateFile(
   }
 
   const errors: ValidationError[] = [];
+
+  // Check expected folder constraint
+  const expectedFolderRaw = schema.expectedFolderMap.get(entityType);
+  const expectedFolder = expectedFolderRaw?.replace(/[/\\]+$/, "");
+  if (expectedFolder && !file.path.startsWith(expectedFolder + "/")) {
+    errors.push({
+      field: "__path__",
+      message: `File must be in folder "${expectedFolder}/"`,
+      expected: expectedFolder,
+      received: file.path,
+    });
+  }
+
   const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
   const allowExtra = schema.allowExtraMap.get(entityType) ?? false;
 

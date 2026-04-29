@@ -27,6 +27,7 @@ export function generateEntityFrontmatter(
   allowExtra: boolean,
   properties: Record<string, { required?: boolean }>,
   extendsEntity?: string,
+  expectedFolder?: string,
 ): string {
   const lines: string[] = ["---", `entity_name: ${yamlScalar(name)}`];
 
@@ -36,6 +37,10 @@ export function generateEntityFrontmatter(
 
   if (allowExtra) {
     lines.push("allow_extra: true");
+  }
+
+  if (expectedFolder) {
+    lines.push(`expected_folder: ${yamlScalar(expectedFolder)}`);
   }
 
   const entries = Object.entries(properties);

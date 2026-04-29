@@ -190,6 +190,7 @@ export async function writeEntityFile(
   properties: Record<string, { required?: boolean }>,
   extendsEntity?: string,
   sourcePath?: string,
+  expectedFolder?: string,
 ): Promise<void> {
   let filePath: string;
   if (sourcePath) {
@@ -199,7 +200,7 @@ export async function writeEntityFile(
     await ensureDirectoryExists(app, entitiesPath);
     filePath = `${entitiesPath}/${name}_entity.md`;
   }
-  const content = generateEntityFrontmatter(name, allowExtra, properties, extendsEntity);
+  const content = generateEntityFrontmatter(name, allowExtra, properties, extendsEntity, expectedFolder);
   await createOrModify(app, filePath, content);
 }
 

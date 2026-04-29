@@ -106,6 +106,7 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
       properties,
       extends: data.extends ?? undefined,
       allow_extra: data.allow_extra ?? undefined,
+      expected_folder: data.expected_folder ?? undefined,
       folder,
       sourcePath: file.path,
     });
@@ -213,7 +214,14 @@ export function loadSchema(
     allowExtraMap.set(entity.name, entity.allow_extra ?? false);
   }
 
-  return { entities, properties, entityMap, allowExtraMap };
+  const expectedFolderMap = new Map<string, string>();
+  for (const entity of entities) {
+    if (entity.expected_folder) {
+      expectedFolderMap.set(entity.name, entity.expected_folder);
+    }
+  }
+
+  return { entities, properties, entityMap, allowExtraMap, expectedFolderMap };
 }
 
 /** Build a Zod validator for a single property based on its schema */

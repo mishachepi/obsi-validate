@@ -158,7 +158,7 @@ export async function renderEntitiesTab(
 
 function renderEntityItem(
   containerEl: HTMLElement,
-  entity: { name: string; properties: Record<string, { required?: boolean }>; extends?: string; allow_extra?: boolean; folder?: string; sourcePath?: string },
+  entity: { name: string; properties: Record<string, { required?: boolean }>; extends?: string; allow_extra?: boolean; expected_folder?: string; folder?: string; sourcePath?: string },
   allPropertyNames: string[],
   schema: VaultSchema,
   plugin: ObsiValidatePlugin,
@@ -189,12 +189,16 @@ function renderEntityItem(
   if (entity.allow_extra) {
     summary.createSpan({ text: "allow_extra", cls: "obsi-validate-extra-badge" });
   }
+  if (entity.expected_folder) {
+    summary.createSpan({ text: `📁 ${entity.expected_folder}`, cls: "obsi-validate-folder-badge" });
+  }
 
   const content = details.createDiv({ cls: "obsi-validate-item-content" });
 
   // Mutable state
   let allowExtra = entity.allow_extra ?? false;
   let extendsEntity = entity.extends ?? "";
+  let expectedFolder = entity.expected_folder ?? "";
   const properties: Record<string, { required?: boolean }> = {};
   for (const [k, v] of Object.entries(entity.properties)) {
     properties[k] = { required: v.required };
@@ -214,6 +218,7 @@ function renderEntityItem(
           properties,
           extendsEntity || undefined,
           entity.sourcePath,
+          expectedFolder || undefined,
         );
         plugin.schema = null; plugin.schemaLoading = null;
       } catch (e) {
@@ -247,6 +252,17 @@ function renderEntityItem(
     .addToggle((toggle) =>
       toggle.setValue(allowExtra).onChange((val) => {
         allowExtra = val;
+        autoSave();
+      }),
+    );
+
+  // Expected folder
+  new Setting(content)
+    .setName("Expected folder")
+    .setDesc("Files with this entity type must be in this folder")
+    .addText((text) =>
+      text.setPlaceholder("e.g. areas").setValue(expectedFolder).onChange((val) => {
+        expectedFolder = val.trim().replace(/[/\\]+$/, "");
         autoSave();
       }),
     );
@@ -368,6 +384,16 @@ function renderNewEntityForm(
       }),
     );
 
+  let expectedFolder = "";
+  new Setting(form)
+    .setName("Expected folder")
+    .setDesc("Files with this entity type must be in this folder")
+    .addText((text) =>
+      text.setPlaceholder("e.g. areas").onChange((val) => {
+        expectedFolder = val.trim().replace(/[/\\]+$/, "");
+      }),
+    );
+
   // Properties
   const propsLabel = form.createDiv({ cls: "setting-item-name" });
   propsLabel.setText("Own properties");
@@ -418,6 +444,8 @@ function renderNewEntityForm(
         allowExtra,
         properties,
         extendsEntity || undefined,
+        undefined,
+        expectedFolder || undefined,
       );
       plugin.schema = null;
       new Notice(`Entity "${name}" created.`);

@@ -18,6 +18,26 @@ export function filterSchemaList(query: string, listEl: HTMLElement): void {
   });
 }
 
+/** Group items by their `folder` field. Root (empty folder) is sorted first,
+ * then folders alphabetically. */
+export function groupByFolder<T extends { folder?: string }>(
+  items: T[],
+): { folder: string; items: T[] }[] {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const folder = item.folder ?? "";
+    if (!grouped.has(folder)) grouped.set(folder, []);
+    grouped.get(folder)!.push(item);
+  }
+  return [...grouped.keys()]
+    .sort((a, b) => {
+      if (!a) return -1;
+      if (!b) return 1;
+      return a.localeCompare(b);
+    })
+    .map((folder) => ({ folder, items: grouped.get(folder)! }));
+}
+
 /** Validate a schema name (entity or property) */
 export function isValidSchemaName(name: string): string | null {
   if (!name) return "Name is required";

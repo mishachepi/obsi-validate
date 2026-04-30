@@ -7,7 +7,7 @@ import {
   deprecateSchemaFile,
   entityFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, isValidSchemaName, filterSchemaList } from "./shared";
+import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName } from "./shared";
 
 /** Render an editable property list into containerEl */
 function renderEditablePropList(
@@ -125,28 +125,14 @@ export async function renderEntitiesTab(
     });
   }
 
-  // Group entities by folder
-  const grouped = new Map<string, typeof schema.entities>();
-  for (const entity of schema.entities) {
-    const folder = entity.folder ?? "";
-    if (!grouped.has(folder)) grouped.set(folder, []);
-    grouped.get(folder)!.push(entity);
-  }
-
-  const folders = [...grouped.keys()].sort((a, b) => {
-    if (!a) return -1;
-    if (!b) return 1;
-    return a.localeCompare(b);
-  });
-
-  for (const folder of folders) {
+  for (const { folder, items } of groupByFolder(schema.entities)) {
     if (folder) {
       listEl.createEl("h4", {
         text: folder,
         cls: "obsi-validate-folder-heading",
       });
     }
-    for (const entity of grouped.get(folder)!) {
+    for (const entity of items) {
       renderEntityItem(listEl, entity, allPropertyNames, schema, plugin);
     }
   }

@@ -6,7 +6,7 @@ import {
   deprecateSchemaFile,
   propertyFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, filterSchemaList, isValidSchemaName } from "./shared";
+import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName } from "./shared";
 
 /** Check custom validator expression syntax without executing it.
  * Uses Function constructor solely for syntax checking — the expression comes from
@@ -74,29 +74,14 @@ export async function renderPropertiesTab(
     });
   }
 
-  // Group properties by folder
-  const grouped = new Map<string, typeof schema.properties>();
-  for (const prop of schema.properties) {
-    const folder = prop.folder ?? "";
-    if (!grouped.has(folder)) grouped.set(folder, []);
-    grouped.get(folder)!.push(prop);
-  }
-
-  // Sort: root first, then alphabetical folders
-  const folders = [...grouped.keys()].sort((a, b) => {
-    if (!a) return -1;
-    if (!b) return 1;
-    return a.localeCompare(b);
-  });
-
-  for (const folder of folders) {
+  for (const { folder, items } of groupByFolder(schema.properties)) {
     if (folder) {
       listEl.createEl("h4", {
         text: folder,
         cls: "obsi-validate-folder-heading",
       });
     }
-    for (const prop of grouped.get(folder)!) {
+    for (const prop of items) {
       renderPropertyItem(listEl, prop, schema, plugin);
     }
   }

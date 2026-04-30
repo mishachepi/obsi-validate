@@ -7,7 +7,7 @@ import {
   deprecateSchemaFile,
   entityFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, isValidSchemaName, filterSchemaList } from "./PropertiesTab";
+import { ConfirmArchiveModal, isValidSchemaName, filterSchemaList } from "./shared";
 
 /** Render an editable property list into containerEl */
 function renderEditablePropList(

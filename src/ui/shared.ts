@@ -1,4 +1,28 @@
-import { Modal, App } from "obsidian";
+import { Modal, App, Notice } from "obsidian";
+import type ObsiValidatePlugin from "../plugin-main";
+
+/** Build a debounced auto-save function. Calls `save` after `delayMs` of
+ * inactivity, surfaces failures as a Notice, and invalidates the plugin's
+ * schema cache so the next read picks up the new content. */
+export function makeAutoSave(
+  plugin: ObsiValidatePlugin,
+  save: () => Promise<void>,
+  delayMs = 500,
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try {
+        await save();
+        plugin.schema = null;
+        plugin.schemaLoading = null;
+      } catch (e) {
+        new Notice(`Failed to save: ${e}`);
+      }
+    }, delayMs);
+  };
+}
 
 /** Filter schema list items and folder headings by search query */
 export function filterSchemaList(query: string, listEl: HTMLElement): void {

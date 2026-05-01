@@ -6,7 +6,7 @@ import {
   deprecateSchemaFile,
   propertyFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName } from "./shared";
+import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName, makeAutoSave } from "./shared";
 
 /** Check custom validator expression syntax without executing it.
  * Uses Function constructor solely for syntax checking — the expression comes from
@@ -126,31 +126,20 @@ function renderPropertyItem(
     target_property_value: undefined as { property: string; value: string } | undefined,
   };
 
-  // Auto-save helper
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  const autoSave = () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const syntaxErr = checkValidatorSyntax(customValidator);
-      if (syntaxErr) return; // don't auto-save broken validators
-      try {
-        const hasLC = (currentType === "link" || currentType === "links" || currentType === "list") &&
-          (linkConstraints.target_type_key || linkConstraints.target_folder || linkConstraints.target_has_property || linkConstraints.target_property_value);
-        await writePropertyFile(plugin.app, plugin.settings.schemaDir, prop.name, currentType, {
-          allowed_values: currentType === "enum" ? allowedValues : undefined,
-          min_value: currentType === "number" ? minValue : undefined,
-          max_value: currentType === "number" ? maxValue : undefined,
-          unit: currentType === "number" ? unit : undefined,
-          nullable: nullable || undefined,
-          custom_validator: customValidator || undefined,
-          link_constraints: hasLC ? linkConstraints : undefined,
-        }, prop.sourcePath);
-        plugin.schema = null; plugin.schemaLoading = null;
-      } catch (e) {
-        new Notice(`Failed to save: ${e}`);
-      }
-    }, 500);
-  };
+  const autoSave = makeAutoSave(plugin, async () => {
+    if (checkValidatorSyntax(customValidator)) return; // don't auto-save broken validators
+    const hasLC = (currentType === "link" || currentType === "links" || currentType === "list") &&
+      (linkConstraints.target_type_key || linkConstraints.target_folder || linkConstraints.target_has_property || linkConstraints.target_property_value);
+    await writePropertyFile(plugin.app, plugin.settings.schemaDir, prop.name, currentType, {
+      allowed_values: currentType === "enum" ? allowedValues : undefined,
+      min_value: currentType === "number" ? minValue : undefined,
+      max_value: currentType === "number" ? maxValue : undefined,
+      unit: currentType === "number" ? unit : undefined,
+      nullable: nullable || undefined,
+      custom_validator: customValidator || undefined,
+      link_constraints: hasLC ? linkConstraints : undefined,
+    }, prop.sourcePath);
+  });
 
   // Type dropdown
   new Setting(content).setName("Type").addDropdown((dd) => {

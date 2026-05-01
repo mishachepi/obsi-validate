@@ -7,7 +7,7 @@ import {
   deprecateSchemaFile,
   entityFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName } from "./shared";
+import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName, makeAutoSave } from "./shared";
 
 /** Render an editable property list into containerEl */
 function renderEditablePropList(
@@ -198,28 +198,18 @@ function renderEntityItem(
     properties[k] = { required: v.required };
   }
 
-  // Auto-save helper (debounced)
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  const autoSave = () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      try {
-        await writeEntityFile(
-          plugin.app,
-          plugin.settings.schemaDir,
-          entity.name,
-          allowExtra,
-          properties,
-          extendsEntity || undefined,
-          entity.sourcePath,
-          expectedFolder || undefined,
-        );
-        plugin.schema = null; plugin.schemaLoading = null;
-      } catch (e) {
-        new Notice(`Failed to save: ${e}`);
-      }
-    }, 500);
-  };
+  const autoSave = makeAutoSave(plugin, () =>
+    writeEntityFile(
+      plugin.app,
+      plugin.settings.schemaDir,
+      entity.name,
+      allowExtra,
+      properties,
+      extendsEntity || undefined,
+      entity.sourcePath,
+      expectedFolder || undefined,
+    ),
+  );
 
   // Extends dropdown
   new Setting(content)

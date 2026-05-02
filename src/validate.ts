@@ -8,6 +8,7 @@ import type {
   ValidationResult,
   ValidationSummary,
   ValidationError,
+  ResolvedProperty,
 } from "./types.js";
 import { DEFAULT_ENTITY_FIELD } from "./constants.js";
 
@@ -60,11 +61,17 @@ export function validateFile(
   const entityType = (rawEntityType as string | undefined) ?? defaultType ?? undefined;
 
   if (!entityType) {
+    // Still check body links even without entity type
+    const errors: ValidationError[] = [];
+    if (options?.checkLinks && options.vaultIndex) {
+      errors.push(...validateBodyLinks(file.content, options.vaultIndex));
+      errors.push(...validateInlineProperties(file.content, schema, null, options.vaultIndex, options.typeKeyField ?? DEFAULT_ENTITY_FIELD));
+    }
     return {
       file: file.path,
       entityType: null,
-      valid: true,
-      errors: [],
+      valid: errors.length === 0,
+      errors,
       warnings: [{ field: typeKeyField, message: `Missing ${typeKeyField}, skipped` }],
     };
   }
@@ -197,6 +204,21 @@ export function validateFile(
     }
   }
 
+  // Body link and inline property validation
+  if (options?.checkLinks && options.vaultIndex) {
+    const bodyLinkErrors = validateBodyLinks(file.content, options.vaultIndex);
+    errors.push(...bodyLinkErrors);
+
+    const inlineErrors = validateInlineProperties(
+      file.content,
+      schema,
+      entityType,
+      options.vaultIndex,
+      options.typeKeyField ?? DEFAULT_ENTITY_FIELD,
+    );
+    errors.push(...inlineErrors);
+  }
+
   return {
     file: file.path,
     entityType,
@@ -204,6 +226,129 @@ export function validateFile(
     errors,
     warnings,
   };
+}
+
+/** Extract body content (everything after frontmatter) */
+function extractBody(content: string): string {
+  const firstSep = content.indexOf("---");
+  if (firstSep === -1) return content;
+  const secondSep = content.indexOf("---", firstSep + 3);
+  if (secondSep === -1) return content;
+  return content.slice(secondSep + 3);
+}
+
+/** Validate body wikilinks exist in vault index */
+export function validateBodyLinks(
+  content: string,
+  index: VaultIndex,
+): ValidationError[] {
+  const body = extractBody(content);
+  const errors: ValidationError[] = [];
+  const linkRegex = /\[\[([^\]]+)\]\]/g;
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = linkRegex.exec(body)) !== null) {
+    const raw = match[1];
+    let target = raw;
+    const pipe = target.indexOf("|");
+    if (pipe >= 0) target = target.slice(0, pipe);
+    const hash = target.indexOf("#");
+    if (hash >= 0) target = target.slice(0, hash);
+    target = target.trim();
+    if (!target || seen.has(target)) continue;
+    seen.add(target);
+
+    const entry = index.get(target) ?? index.get(target.split("/").pop()!);
+    if (!entry) {
+      errors.push({
+        field: "__body_link__",
+        message: `Broken wikilink: [[${target}]] not found in vault`,
+        received: target,
+      });
+    }
+  }
+  return errors;
+}
+
+/** Validate inline Dataview properties [key::value] in body */
+export function validateInlineProperties(
+  content: string,
+  schema: VaultSchema,
+  entityType: string | null,
+  index: VaultIndex,
+  typeKeyField: string,
+): ValidationError[] {
+  const body = extractBody(content);
+  const errors: ValidationError[] = [];
+  const inlineRegex = /\[([a-z_][a-z0-9_]*)::([^\]]*)\]/gi;
+  let match: RegExpExecArray | null;
+  while ((match = inlineRegex.exec(body)) !== null) {
+    const key = match[1];
+    const rawValue = match[2].trim();
+
+    const linkMatch = rawValue.match(/^\[\[([^\]]+)\]\]$/);
+
+    // Try to find property in schema for this entity type
+    let prop: ResolvedProperty | undefined;
+    if (entityType) {
+      const resolvedProps = schema.entityMap.get(entityType);
+      if (resolvedProps) {
+        prop = resolvedProps.find((p) => p.name === key);
+      }
+    }
+
+    if (prop) {
+      const value = linkMatch ? `[[${linkMatch[1]}]]` : rawValue;
+      if (prop.validator) {
+        const result = prop.validator.safeParse(value);
+        if (!result.success) {
+          for (const issue of result.error.issues) {
+            errors.push({
+              field: `__inline__${key}`,
+              message: `Inline [${key}::${rawValue}]: ${issue.message}`,
+              received: value,
+            });
+          }
+        }
+      }
+      if (prop.link_constraints && linkMatch) {
+        const linkErrors = validateLinkTarget(
+          `[[${linkMatch[1]}]]`,
+          prop.link_constraints,
+          index,
+          typeKeyField,
+        );
+        for (const msg of linkErrors) {
+          errors.push({
+            field: `__inline__${key}`,
+            message: `Inline [${key}::${rawValue}]: ${msg}`,
+            received: rawValue,
+          });
+        }
+      }
+    }
+
+    // For any wikilink value, check existence
+    if (linkMatch) {
+      let target = linkMatch[1];
+      const pipe = target.indexOf("|");
+      if (pipe >= 0) target = target.slice(0, pipe);
+      const hash = target.indexOf("#");
+      if (hash >= 0) target = target.slice(0, hash);
+      target = target.trim();
+      if (target) {
+        const entry = index.get(target) ?? index.get(target.split("/").pop()!);
+        if (!entry) {
+          errors.push({
+            field: `__inline__${key}`,
+            message: `Inline [${key}::[[${target}]]]: linked note not found in vault`,
+            received: target,
+          });
+        }
+      }
+    }
+  }
+  return errors;
 }
 
 /** Validate multiple files, return summary */

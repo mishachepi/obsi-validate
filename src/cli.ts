@@ -8,6 +8,7 @@ import { resolveConfig } from "./config.js";
 import type {
   RawFile,
   ValidateOptions,
+  VaultIndex,
   VaultSchema,
   ValidationResult,
   ValidationSummary,
@@ -67,7 +68,9 @@ async function validateStreaming(
   let skipped = 0;
 
   for (const path of paths) {
-    const content = await readFrontmatterOnly(path);
+    const content = validateOpts?.checkLinks
+      ? await readFile(path, "utf-8")
+      : await readFrontmatterOnly(path);
     const result = validateFile({ path, content }, schema, validateOpts);
 
     if (typeFilter && result.entityType !== typeFilter) continue;
@@ -127,6 +130,7 @@ program
   .option("--vault-dir <path>", "vault root to validate")
   .option("-f, --format <type>", "output format: pretty | json", "pretty")
   .option("-t, --type <entity>", "filter by entity type")
+  .option("--check-links", "validate body wikilinks and inline properties")
   .action(async (path, options) => {
     const config = resolveConfig({
       schema_dir: options.schemaDir,
@@ -145,10 +149,29 @@ program
     const validateOpts: ValidateOptions = {
       typeKeyField: config.type_key_field,
       defaultEntityType: config.default_type || undefined,
+      checkLinks: options.checkLinks ?? false,
     };
 
     // Single file or directory
     const targetStat = await stat(vaultDir);
+
+    // Build vault index when check-links is enabled
+    if (options.checkLinks) {
+      const matter = (await import("gray-matter")).default;
+      const vaultRoot = targetStat.isFile() ? (options.vaultDir ?? vaultDir) : vaultDir;
+      const allPaths = await walkMdFiles(vaultRoot);
+      const vaultIndex: VaultIndex = new Map();
+      for (const p of allPaths) {
+        const fm = await readFrontmatterOnly(p);
+        let data: Record<string, unknown> = {};
+        try {
+          data = matter(fm).data;
+        } catch {}
+        const basename = p.split("/").pop()!.replace(/\.md$/, "");
+        vaultIndex.set(basename, { path: p, data });
+      }
+      validateOpts.vaultIndex = vaultIndex;
+    }
     const targetPaths = targetStat.isFile()
       ? [vaultDir]
       : await walkMdFiles(vaultDir);

@@ -115,4 +115,6 @@ export type ValidateOptions = {
   defaultEntityType?: string;
   /** Vault index for cross-file link validation */
   vaultIndex?: VaultIndex;
+  /** When true, also validate body wikilinks and inline properties */
+  checkLinks?: boolean;
 };

@@ -60,8 +60,8 @@ export default class ObsiValidatePlugin extends Plugin {
       id: "show-validation-results",
       name: "Show validation results",
       callback: () => {
-        this.activateResultsView().then(() => {
-          const view = this.getResultsView();
+        this.activateView(VIEW_TYPE_RESULTS).then(() => {
+          const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
           if (view && this.lastResult) view.renderSingleResult(this.lastResult);
         });
       },
@@ -72,8 +72,8 @@ export default class ObsiValidatePlugin extends Plugin {
     this.statusBarEl.addClass("obsi-validate-statusbar");
     this.statusBarEl.addEventListener("click", () => {
       if (this.lastResult) {
-        this.activateResultsView().then(() => {
-          const view = this.getResultsView();
+        this.activateView(VIEW_TYPE_RESULTS).then(() => {
+          const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
           if (view) view.renderSingleResult(this.lastResult!);
         });
       }
@@ -204,7 +204,7 @@ export default class ObsiValidatePlugin extends Plugin {
     this.renderStatusBar();
 
     // Update results panel if it's open
-    const view = this.getResultsView();
+    const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
     if (view) view.renderSingleResult(result);
   }
 
@@ -291,14 +291,14 @@ export default class ObsiValidatePlugin extends Plugin {
     this.lastResult = result;
     this.renderStatusBar();
 
-    await this.activateResultsView();
-    const view = this.getResultsView();
+    await this.activateView(VIEW_TYPE_RESULTS);
+    const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
     if (view) view.renderSingleResult(result);
   }
 
   private async showVaultResults(summary: ValidationSummary) {
-    await this.activateVaultResultsView();
-    const view = this.getVaultResultsView();
+    await this.activateView(VIEW_TYPE_VAULT_RESULTS);
+    const view = this.getView<VaultResultsView>(VIEW_TYPE_VAULT_RESULTS);
     if (view) view.renderSummary(summary);
   }
 
@@ -324,12 +324,23 @@ export default class ObsiValidatePlugin extends Plugin {
     };
   }
 
-  private getResultsView(): ResultsView | null {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RESULTS);
-    if (leaves.length > 0) {
-      return leaves[0].view as ResultsView;
+  private getView<T>(viewType: string): T | null {
+    const leaves = this.app.workspace.getLeavesOfType(viewType);
+    return leaves.length > 0 ? (leaves[0].view as T) : null;
+  }
+
+  private async activateView(viewType: string): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(viewType);
+    if (existing.length === 0) {
+      const leaf = this.app.workspace.getRightLeaf(false);
+      if (leaf) {
+        await leaf.setViewState({ type: viewType, active: true });
+      }
     }
-    return null;
+    const leaves = this.app.workspace.getLeavesOfType(viewType);
+    if (leaves.length > 0) {
+      this.app.workspace.revealLeaf(leaves[0]);
+    }
   }
 
   /** Open plugin settings on a specific tab with search pre-filled */
@@ -345,39 +356,4 @@ export default class ObsiValidatePlugin extends Plugin {
     }
   }
 
-  async activateResultsView() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_RESULTS);
-    if (existing.length === 0) {
-      const leaf = this.app.workspace.getRightLeaf(false);
-      if (leaf) {
-        await leaf.setViewState({ type: VIEW_TYPE_RESULTS, active: true });
-      }
-    }
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RESULTS);
-    if (leaves.length > 0) {
-      this.app.workspace.revealLeaf(leaves[0]);
-    }
-  }
-
-  private getVaultResultsView(): VaultResultsView | null {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_RESULTS);
-    if (leaves.length > 0) {
-      return leaves[0].view as VaultResultsView;
-    }
-    return null;
-  }
-
-  async activateVaultResultsView() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_RESULTS);
-    if (existing.length === 0) {
-      const leaf = this.app.workspace.getRightLeaf(false);
-      if (leaf) {
-        await leaf.setViewState({ type: VIEW_TYPE_VAULT_RESULTS, active: true });
-      }
-    }
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_RESULTS);
-    if (leaves.length > 0) {
-      this.app.workspace.revealLeaf(leaves[0]);
-    }
-  }
 }

@@ -1,19 +1,18 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import { DEFAULT_ENTITY_FIELD } from "./constants.js";
 
 export type Config = {
   schema_dir: string;
   vault_dir: string;
-  type_key_field: string;
+  /** Frontmatter field for entity type — undefined means caller should auto-detect */
+  type_key_field?: string;
   default_type: string;
 };
 
-const DEFAULTS: Config = {
+const DEFAULTS = {
   schema_dir: "./vault",
   vault_dir: ".",
-  type_key_field: DEFAULT_ENTITY_FIELD,
   default_type: "",
 };
 
@@ -47,9 +46,7 @@ export function resolveConfig(flags: Partial<Config>): Config {
       process.env.VAULT_DIR ??
       file.vault_dir ??
       DEFAULTS.vault_dir,
-    type_key_field:
-      file.type_key_field ??
-      DEFAULTS.type_key_field,
+    type_key_field: flags.type_key_field ?? file.type_key_field,
     default_type:
       file.default_type ??
       DEFAULTS.default_type,

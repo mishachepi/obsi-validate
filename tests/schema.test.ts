@@ -1,6 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { join } from "path";
-import { loadSchema, parseProperties, parseEntities } from "../src/schema.js";
+import {
+  loadSchema,
+  parseProperties,
+  parseEntities,
+  detectTypeKeyField,
+} from "../src/schema.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 describe("parseProperties", () => {
@@ -72,6 +77,60 @@ describe("parseEntities", () => {
     const day = entities.find((e) => e.name === "day")!;
 
     expect(day.properties.date.required).toBe(true);
+  });
+});
+
+describe("detectTypeKeyField", () => {
+  test("returns 'type_key' when schema declares type_key property", () => {
+    const schema = loadSchema(
+      [
+        {
+          path: "/x/entities/task_entity.md",
+          content: "---\nentity_name: task\nproperties:\n  status: {}\n---",
+        },
+      ],
+      [
+        {
+          path: "/x/properties/type_key_property.md",
+          content: "---\nproperty_name: type_key\nproperty_type: string\n---",
+        },
+      ],
+    );
+    expect(detectTypeKeyField(schema)).toBe("type_key");
+  });
+
+  test("returns undefined when schema has no type_key property", () => {
+    const schema = loadSchema(
+      [
+        {
+          path: "/x/entities/task_entity.md",
+          content: "---\nentity_name: task\nproperties:\n  status: {}\n---",
+        },
+      ],
+      [
+        {
+          path: "/x/properties/status_property.md",
+          content: "---\nproperty_name: status\nproperty_type: string\n---",
+        },
+      ],
+    );
+    expect(detectTypeKeyField(schema)).toBeUndefined();
+  });
+});
+
+describe("links validator accepts scalar or array", () => {
+  test("single wikilink string is accepted", () => {
+    const props = parseProperties([
+      {
+        path: "/x/properties/epic_property.md",
+        content:
+          "---\nproperty_name: epic\nproperty_type: links\ntarget_type_key: epic\n---",
+      },
+    ]);
+    const epic = props.find((p) => p.name === "epic")!;
+    expect(epic.validator!.safeParse("[[Some Epic]]").success).toBe(true);
+    expect(epic.validator!.safeParse(["[[A]]", "[[B]]"]).success).toBe(true);
+    expect(epic.validator!.safeParse(123).success).toBe(false);
   });
 });
 

@@ -1,7 +1,12 @@
 import { describe, test, expect } from "bun:test";
 import { join } from "path";
 import { loadSchema } from "../src/schema.js";
-import { validateFile, validateFiles } from "../src/validate.js";
+import {
+  validateBodyLinks,
+  validateFile,
+  validateFiles,
+} from "../src/validate.js";
+import type { VaultIndex } from "../src/types.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 async function getSchema() {
@@ -228,6 +233,144 @@ describe("validateFile", () => {
     expect(result.valid).toBe(true);
     expect(result.warnings).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
+  });
+});
+
+describe("link constraints in property values", () => {
+  test("type_key=task + epic with broken wikilink → validation error", async () => {
+    const schema = loadSchema(
+      [
+        {
+          path: "/v/entities/task_entity.md",
+          content:
+            "---\nentity_name: task\nproperties:\n  epic: {}\n  status: { required: true }\n---",
+        },
+      ],
+      [
+        {
+          path: "/v/properties/type_key_property.md",
+          content: "---\nproperty_name: type_key\nproperty_type: string\n---",
+        },
+        {
+          path: "/v/properties/status_property.md",
+          content: "---\nproperty_name: status\nproperty_type: string\n---",
+        },
+        {
+          path: "/v/properties/epic_property.md",
+          content:
+            "---\nproperty_name: epic\nproperty_type: links\ntarget_type_key: epic\n---",
+        },
+      ],
+    );
+
+    // Empty vault index → any wikilink will be "not found"
+    const vaultIndex = new Map();
+
+    const file = {
+      path: "/v/tasks/some-task.md",
+      content: [
+        "---",
+        "type_key: task",
+        "status: In Progress",
+        'epic: "[[Nonexistent Epic]]"',
+        "---",
+      ].join("\n"),
+    };
+
+    const result = validateFile(file, schema, {
+      typeKeyField: "type_key",
+      checkLinks: true,
+      vaultIndex,
+    });
+
+    expect(result.entityType).toBe("task");
+    expect(result.valid).toBe(false);
+    const epicErr = result.errors.find((e) => e.field === "epic");
+    expect(epicErr).toBeDefined();
+    expect(epicErr!.message).toContain("not found in vault");
+  });
+
+  test("epic property accepts a single wikilink string (not just array)", async () => {
+    const schema = loadSchema(
+      [
+        {
+          path: "/v/entities/task_entity.md",
+          content:
+            "---\nentity_name: task\nproperties:\n  epic: {}\n---",
+        },
+      ],
+      [
+        {
+          path: "/v/properties/epic_property.md",
+          content:
+            "---\nproperty_name: epic\nproperty_type: links\n---",
+        },
+      ],
+    );
+
+    const file = {
+      path: "/v/tasks/x.md",
+      content: '---\ntype_key: task\nepic: "[[Some Epic]]"\n---',
+    };
+
+    const result = validateFile(file, schema, { typeKeyField: "type_key" });
+    // No zod failure on the scalar value
+    expect(result.errors.find((e) => e.field === "epic")).toBeUndefined();
+  });
+});
+
+describe("validateBodyLinks", () => {
+  function indexWith(...names: string[]): VaultIndex {
+    const index: VaultIndex = new Map();
+    for (const name of names) index.set(name, { path: `${name}.md`, data: {} });
+    return index;
+  }
+
+  test("table with valid wikilink in cell produces no errors", () => {
+    const content = [
+      "---",
+      "type_key: person",
+      "---",
+      "",
+      "| Name / Aliases         | Wikilink          |",
+      "|:---------------------- |:----------------- |",
+      "| Света, Sveta, Светлана | [[Sveta Efimova]] |",
+      "",
+    ].join("\n");
+
+    const errors = validateBodyLinks(content, indexWith("Sveta Efimova"));
+    expect(errors).toHaveLength(0);
+  });
+
+  test("[[broken|alias]] reports exactly one broken-link error", () => {
+    const content = "---\ntype_key: note\n---\n\n[[NonExistent|Display]]\n";
+    const errors = validateBodyLinks(content, indexWith("ExistingNote"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0].received).toBe("NonExistent");
+    expect(errors[0].message).toContain("[[NonExistent]]");
+  });
+
+  test("unclosed [[ on a line does not swallow table pipes as alias", () => {
+    const content = [
+      "---",
+      "type_key: note",
+      "---",
+      "",
+      "| col1 | col2 |",
+      "|------|------|",
+      "| [[Open | thing |",
+      "| line2 | [[Sveta Efimova]] |",
+      "",
+    ].join("\n");
+
+    const errors = validateBodyLinks(content, indexWith("Sveta Efimova"));
+    expect(errors).toHaveLength(0);
+  });
+
+  test("real pipe-syntax [[target|display]] still resolves to target", () => {
+    const content = "---\ntype_key: note\n---\n\nsee [[Real Note|alias]]\n";
+    const errors = validateBodyLinks(content, indexWith("Real Note"));
+    expect(errors).toHaveLength(0);
   });
 });
 

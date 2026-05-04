@@ -7,7 +7,7 @@ import {
   deprecateSchemaFile,
   entityFilePath,
 } from "../bridge";
-import { ConfirmArchiveModal, isValidSchemaName, filterSchemaList } from "./PropertiesTab";
+import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName, makeAutoSave } from "./shared";
 
 /** Render an editable property list into containerEl */
 function renderEditablePropList(
@@ -125,28 +125,14 @@ export async function renderEntitiesTab(
     });
   }
 
-  // Group entities by folder
-  const grouped = new Map<string, typeof schema.entities>();
-  for (const entity of schema.entities) {
-    const folder = entity.folder ?? "";
-    if (!grouped.has(folder)) grouped.set(folder, []);
-    grouped.get(folder)!.push(entity);
-  }
-
-  const folders = [...grouped.keys()].sort((a, b) => {
-    if (!a) return -1;
-    if (!b) return 1;
-    return a.localeCompare(b);
-  });
-
-  for (const folder of folders) {
+  for (const { folder, items } of groupByFolder(schema.entities)) {
     if (folder) {
       listEl.createEl("h4", {
         text: folder,
         cls: "obsi-validate-folder-heading",
       });
     }
-    for (const entity of grouped.get(folder)!) {
+    for (const entity of items) {
       renderEntityItem(listEl, entity, allPropertyNames, schema, plugin);
     }
   }
@@ -212,28 +198,18 @@ function renderEntityItem(
     properties[k] = { required: v.required };
   }
 
-  // Auto-save helper (debounced)
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  const autoSave = () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      try {
-        await writeEntityFile(
-          plugin.app,
-          plugin.settings.schemaDir,
-          entity.name,
-          allowExtra,
-          properties,
-          extendsEntity || undefined,
-          entity.sourcePath,
-          expectedFolder || undefined,
-        );
-        plugin.schema = null; plugin.schemaLoading = null;
-      } catch (e) {
-        new Notice(`Failed to save: ${e}`);
-      }
-    }, 500);
-  };
+  const autoSave = makeAutoSave(plugin, () =>
+    writeEntityFile(
+      plugin.app,
+      plugin.settings.schemaDir,
+      entity.name,
+      allowExtra,
+      properties,
+      extendsEntity || undefined,
+      entity.sourcePath,
+      expectedFolder || undefined,
+    ),
+  );
 
   // Extends dropdown
   new Setting(content)

@@ -2,12 +2,13 @@
 import { program } from "commander";
 import { readdir, readFile, stat } from "fs/promises";
 import { join, relative } from "path";
-import { loadSchema } from "./schema.js";
+import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
 import type {
   RawFile,
   ValidateOptions,
+  VaultIndex,
   VaultSchema,
   ValidationResult,
   ValidationSummary,
@@ -67,7 +68,9 @@ async function validateStreaming(
   let skipped = 0;
 
   for (const path of paths) {
-    const content = await readFrontmatterOnly(path);
+    const content = validateOpts?.checkLinks
+      ? await readFile(path, "utf-8")
+      : await readFrontmatterOnly(path);
     const result = validateFile({ path, content }, schema, validateOpts);
 
     if (typeFilter && result.entityType !== typeFilter) continue;
@@ -127,6 +130,8 @@ program
   .option("--vault-dir <path>", "vault root to validate")
   .option("-f, --format <type>", "output format: pretty | json", "pretty")
   .option("-t, --type <entity>", "filter by entity type")
+  .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
+  .option("--check-links", "validate body wikilinks and inline properties")
   .action(async (path, options) => {
     const config = resolveConfig({
       schema_dir: options.schemaDir,
@@ -142,13 +147,39 @@ program
     ]);
     const schema = loadSchema(entityFiles, propertyFiles);
 
+    // Resolve type_key field: CLI flag > config > schema auto-detect > "entity" fallback
+    const typeKeyField =
+      options.typeKeyField ??
+      config.type_key_field ??
+      detectTypeKeyField(schema) ??
+      "entity";
+
     const validateOpts: ValidateOptions = {
-      typeKeyField: config.type_key_field,
+      typeKeyField,
       defaultEntityType: config.default_type || undefined,
+      checkLinks: options.checkLinks ?? false,
     };
 
     // Single file or directory
     const targetStat = await stat(vaultDir);
+
+    // Build vault index when check-links is enabled
+    if (options.checkLinks) {
+      const matter = (await import("gray-matter")).default;
+      const vaultRoot = targetStat.isFile() ? (options.vaultDir ?? vaultDir) : vaultDir;
+      const allPaths = await walkMdFiles(vaultRoot);
+      const vaultIndex: VaultIndex = new Map();
+      for (const p of allPaths) {
+        const fm = await readFrontmatterOnly(p);
+        let data: Record<string, unknown> = {};
+        try {
+          data = matter(fm).data;
+        } catch {}
+        const basename = p.split("/").pop()!.replace(/\.md$/, "");
+        vaultIndex.set(basename, { path: p, data });
+      }
+      validateOpts.vaultIndex = vaultIndex;
+    }
     const targetPaths = targetStat.isFile()
       ? [vaultDir]
       : await walkMdFiles(vaultDir);

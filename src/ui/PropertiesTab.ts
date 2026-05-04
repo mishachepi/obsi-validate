@@ -1,4 +1,4 @@
-import { Modal, App, Notice, Setting } from "obsidian";
+import { Notice, Setting } from "obsidian";
 import type ObsiValidatePlugin from "../plugin-main";
 import {
   ensureSchema,
@@ -6,33 +6,7 @@ import {
   deprecateSchemaFile,
   propertyFilePath,
 } from "../bridge";
-
-/** Filter schema list items and folder headings by search query */
-export function filterSchemaList(query: string, listEl: HTMLElement): void {
-  const q = query.toLowerCase();
-  listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
-    const name = (el as HTMLElement).dataset.name ?? "";
-    (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
-  });
-  listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {
-    let hasVisible = false;
-    let sib = el.nextElementSibling;
-    while (sib && sib.classList.contains("obsi-validate-schema-item")) {
-      if ((sib as HTMLElement).style.display !== "none") hasVisible = true;
-      sib = sib.nextElementSibling;
-    }
-    (el as HTMLElement).style.display = hasVisible ? "" : "none";
-  });
-}
-
-/** Validate a schema name (entity or property) */
-export function isValidSchemaName(name: string): string | null {
-  if (!name) return "Name is required";
-  if (name.length > 100) return "Name too long (max 100)";
-  if (/[\/\\:*?"<>|]/.test(name)) return "Name contains invalid characters";
-  if (name.startsWith(".") || name.startsWith("_")) return "Name cannot start with . or _";
-  return null;
-}
+import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName, makeAutoSave } from "./shared";
 
 /** Check custom validator expression syntax without executing it.
  * Uses Function constructor solely for syntax checking — the expression comes from
@@ -100,29 +74,14 @@ export async function renderPropertiesTab(
     });
   }
 
-  // Group properties by folder
-  const grouped = new Map<string, typeof schema.properties>();
-  for (const prop of schema.properties) {
-    const folder = prop.folder ?? "";
-    if (!grouped.has(folder)) grouped.set(folder, []);
-    grouped.get(folder)!.push(prop);
-  }
-
-  // Sort: root first, then alphabetical folders
-  const folders = [...grouped.keys()].sort((a, b) => {
-    if (!a) return -1;
-    if (!b) return 1;
-    return a.localeCompare(b);
-  });
-
-  for (const folder of folders) {
+  for (const { folder, items } of groupByFolder(schema.properties)) {
     if (folder) {
       listEl.createEl("h4", {
         text: folder,
         cls: "obsi-validate-folder-heading",
       });
     }
-    for (const prop of grouped.get(folder)!) {
+    for (const prop of items) {
       renderPropertyItem(listEl, prop, schema, plugin);
     }
   }
@@ -167,31 +126,20 @@ function renderPropertyItem(
     target_property_value: undefined as { property: string; value: string } | undefined,
   };
 
-  // Auto-save helper
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  const autoSave = () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const syntaxErr = checkValidatorSyntax(customValidator);
-      if (syntaxErr) return; // don't auto-save broken validators
-      try {
-        const hasLC = (currentType === "link" || currentType === "links" || currentType === "list") &&
-          (linkConstraints.target_type_key || linkConstraints.target_folder || linkConstraints.target_has_property || linkConstraints.target_property_value);
-        await writePropertyFile(plugin.app, plugin.settings.schemaDir, prop.name, currentType, {
-          allowed_values: currentType === "enum" ? allowedValues : undefined,
-          min_value: currentType === "number" ? minValue : undefined,
-          max_value: currentType === "number" ? maxValue : undefined,
-          unit: currentType === "number" ? unit : undefined,
-          nullable: nullable || undefined,
-          custom_validator: customValidator || undefined,
-          link_constraints: hasLC ? linkConstraints : undefined,
-        }, prop.sourcePath);
-        plugin.schema = null; plugin.schemaLoading = null;
-      } catch (e) {
-        new Notice(`Failed to save: ${e}`);
-      }
-    }, 500);
-  };
+  const autoSave = makeAutoSave(plugin, async () => {
+    if (checkValidatorSyntax(customValidator)) return; // don't auto-save broken validators
+    const hasLC = (currentType === "link" || currentType === "links" || currentType === "list") &&
+      (linkConstraints.target_type_key || linkConstraints.target_folder || linkConstraints.target_has_property || linkConstraints.target_property_value);
+    await writePropertyFile(plugin.app, plugin.settings.schemaDir, prop.name, currentType, {
+      allowed_values: currentType === "enum" ? allowedValues : undefined,
+      min_value: currentType === "number" ? minValue : undefined,
+      max_value: currentType === "number" ? maxValue : undefined,
+      unit: currentType === "number" ? unit : undefined,
+      nullable: nullable || undefined,
+      custom_validator: customValidator || undefined,
+      link_constraints: hasLC ? linkConstraints : undefined,
+    }, prop.sourcePath);
+  });
 
   // Type dropdown
   new Setting(content).setName("Type").addDropdown((dd) => {
@@ -583,43 +531,3 @@ function renderNewPropertyForm(
   });
 }
 
-/** Confirmation modal for archiving schema files */
-export class ConfirmArchiveModal extends Modal {
-  private kind: string;
-  private name: string;
-  private onConfirm: () => void;
-
-  constructor(app: App, kind: string, name: string, onConfirm: () => void) {
-    super(app);
-    this.kind = kind;
-    this.name = name;
-    this.onConfirm = onConfirm;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.createEl("h3", { text: `Archive ${this.kind}` });
-    contentEl.createEl("p", {
-      text: `Are you sure you want to archive "${this.name}"? The file will be moved to the _deprecated/ directory.`,
-    });
-
-    const actions = contentEl.createDiv({ cls: "obsi-validate-action-bar" });
-    const confirmBtn = actions.createEl("button", {
-      text: "Archive",
-      cls: "mod-warning",
-    });
-    const cancelBtn = actions.createEl("button", { text: "Cancel" });
-
-    confirmBtn.addEventListener("click", () => {
-      this.onConfirm();
-      this.close();
-    });
-    cancelBtn.addEventListener("click", () => {
-      this.close();
-    });
-  }
-
-  onClose() {
-    this.contentEl.empty();
-  }
-}

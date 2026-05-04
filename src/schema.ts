@@ -10,6 +10,20 @@ import type {
   VaultSchema,
 } from "./types.js";
 
+/** Derive a name from a schema file path: filename minus the suffix and ".md" */
+function nameFromPath(path: string, suffix: string): string {
+  return path.split("/").pop()?.replace(suffix, "").replace(".md", "") ?? "";
+}
+
+/** Folder of a schema file relative to its base directory ("properties" or "entities").
+ * Returns undefined if the file is directly in the base dir or the base dir isn't in the path. */
+function folderFromPath(path: string, baseDir: string): string | undefined {
+  const parts = path.split("/");
+  parts.pop(); // remove filename
+  const idx = parts.lastIndexOf(baseDir);
+  return idx >= 0 && idx < parts.length - 1 ? parts.slice(idx + 1).join("/") : undefined;
+}
+
 /** Parse property files' frontmatter into PropertySchema[] */
 export function parseProperties(files: RawFile[]): PropertySchema[] {
   const results: PropertySchema[] = [];
@@ -18,20 +32,8 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
     const { data } = matter(file.content);
     if (!data.property_name && !data.property_type) continue;
 
-    const name =
-      data.property_name ??
-      data.name ??
-      file.path.split("/").pop()?.replace("_property.md", "").replace(".md", "") ??
-      "";
-
-    // Derive folder from path (relative to properties dir)
-    const pathParts = file.path.split("/");
-    pathParts.pop(); // remove filename
-    // Find "properties" in path and take everything after it
-    const propIdx = pathParts.lastIndexOf("properties");
-    const folder = propIdx >= 0 && propIdx < pathParts.length - 1
-      ? pathParts.slice(propIdx + 1).join("/")
-      : undefined;
+    const name = data.property_name ?? data.name ?? nameFromPath(file.path, "_property.md");
+    const folder = folderFromPath(file.path, "properties");
 
     // Parse link constraints
     let linkConstraints: LinkConstraints | undefined;
@@ -75,19 +77,8 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
     const { data } = matter(file.content);
     if (!data.entity_name && !data.properties) continue;
 
-    const name =
-      data.entity_name ??
-      data.name ??
-      file.path.split("/").pop()?.replace("_entity.md", "").replace(".md", "") ??
-      "";
-
-    // Derive folder from path (relative to entities dir)
-    const pathParts = file.path.split("/");
-    pathParts.pop(); // remove filename
-    const entIdx = pathParts.lastIndexOf("entities");
-    const folder = entIdx >= 0 && entIdx < pathParts.length - 1
-      ? pathParts.slice(entIdx + 1).join("/")
-      : undefined;
+    const name = data.entity_name ?? data.name ?? nameFromPath(file.path, "_entity.md");
+    const folder = folderFromPath(file.path, "entities");
 
     // Parse properties block: { propName: { required: true } } or { propName: {} }
     const rawProps = data.properties ?? {};
@@ -167,6 +158,17 @@ function resolveInheritance(
     resolve(entity.name, new Set());
   }
   return resolved;
+}
+
+/** Auto-detect the frontmatter field used to discriminate entity types.
+ *
+ * The vault's own schema reveals the convention: if a property named `type_key`
+ * is declared, instances use `type_key:`. Otherwise fall back to the legacy
+ * `entity` default. Returns undefined when caller wants no auto-detection.
+ */
+export function detectTypeKeyField(schema: VaultSchema): string | undefined {
+  if (schema.properties.some((p) => p.name === "type_key")) return "type_key";
+  return undefined;
 }
 
 /** Build complete VaultSchema from raw file contents */
@@ -266,7 +268,7 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.string();
 
     case "links":
-      return z.array(z.string());
+      return z.union([z.string(), z.array(z.string())]);
 
     case "list":
       return z.array(z.unknown());

@@ -2,7 +2,7 @@
 import { program } from "commander";
 import { readdir, readFile, stat } from "fs/promises";
 import { join, relative } from "path";
-import { loadSchema } from "./schema.js";
+import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
 import type {
@@ -130,6 +130,7 @@ program
   .option("--vault-dir <path>", "vault root to validate")
   .option("-f, --format <type>", "output format: pretty | json", "pretty")
   .option("-t, --type <entity>", "filter by entity type")
+  .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
   .option("--check-links", "validate body wikilinks and inline properties")
   .action(async (path, options) => {
     const config = resolveConfig({
@@ -146,8 +147,15 @@ program
     ]);
     const schema = loadSchema(entityFiles, propertyFiles);
 
+    // Resolve type_key field: CLI flag > config > schema auto-detect > "entity" fallback
+    const typeKeyField =
+      options.typeKeyField ??
+      config.type_key_field ??
+      detectTypeKeyField(schema) ??
+      "entity";
+
     const validateOpts: ValidateOptions = {
-      typeKeyField: config.type_key_field,
+      typeKeyField,
       defaultEntityType: config.default_type || undefined,
       checkLinks: options.checkLinks ?? false,
     };

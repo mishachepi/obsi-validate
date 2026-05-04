@@ -160,6 +160,17 @@ function resolveInheritance(
   return resolved;
 }
 
+/** Auto-detect the frontmatter field used to discriminate entity types.
+ *
+ * The vault's own schema reveals the convention: if a property named `type_key`
+ * is declared, instances use `type_key:`. Otherwise fall back to the legacy
+ * `entity` default. Returns undefined when caller wants no auto-detection.
+ */
+export function detectTypeKeyField(schema: VaultSchema): string | undefined {
+  if (schema.properties.some((p) => p.name === "type_key")) return "type_key";
+  return undefined;
+}
+
 /** Build complete VaultSchema from raw file contents */
 export function loadSchema(
   entityFiles: RawFile[],
@@ -257,7 +268,7 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.string();
 
     case "links":
-      return z.array(z.string());
+      return z.union([z.string(), z.array(z.string())]);
 
     case "list":
       return z.array(z.unknown());

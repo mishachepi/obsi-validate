@@ -231,6 +231,89 @@ describe("validateFile", () => {
   });
 });
 
+describe("link constraints in property values", () => {
+  test("type_key=task + epic with broken wikilink → validation error", async () => {
+    const schema = loadSchema(
+      [
+        {
+          path: "/v/entities/task_entity.md",
+          content:
+            "---\nentity_name: task\nproperties:\n  epic: {}\n  status: { required: true }\n---",
+        },
+      ],
+      [
+        {
+          path: "/v/properties/type_key_property.md",
+          content: "---\nproperty_name: type_key\nproperty_type: string\n---",
+        },
+        {
+          path: "/v/properties/status_property.md",
+          content: "---\nproperty_name: status\nproperty_type: string\n---",
+        },
+        {
+          path: "/v/properties/epic_property.md",
+          content:
+            "---\nproperty_name: epic\nproperty_type: links\ntarget_type_key: epic\n---",
+        },
+      ],
+    );
+
+    // Empty vault index → any wikilink will be "not found"
+    const vaultIndex = new Map();
+
+    const file = {
+      path: "/v/tasks/some-task.md",
+      content: [
+        "---",
+        "type_key: task",
+        "status: In Progress",
+        'epic: "[[Nonexistent Epic]]"',
+        "---",
+      ].join("\n"),
+    };
+
+    const result = validateFile(file, schema, {
+      typeKeyField: "type_key",
+      checkLinks: true,
+      vaultIndex,
+    });
+
+    expect(result.entityType).toBe("task");
+    expect(result.valid).toBe(false);
+    const epicErr = result.errors.find((e) => e.field === "epic");
+    expect(epicErr).toBeDefined();
+    expect(epicErr!.message).toContain("not found in vault");
+  });
+
+  test("epic property accepts a single wikilink string (not just array)", async () => {
+    const schema = loadSchema(
+      [
+        {
+          path: "/v/entities/task_entity.md",
+          content:
+            "---\nentity_name: task\nproperties:\n  epic: {}\n---",
+        },
+      ],
+      [
+        {
+          path: "/v/properties/epic_property.md",
+          content:
+            "---\nproperty_name: epic\nproperty_type: links\n---",
+        },
+      ],
+    );
+
+    const file = {
+      path: "/v/tasks/x.md",
+      content: '---\ntype_key: task\nepic: "[[Some Epic]]"\n---',
+    };
+
+    const result = validateFile(file, schema, { typeKeyField: "type_key" });
+    // No zod failure on the scalar value
+    expect(result.errors.find((e) => e.field === "epic")).toBeUndefined();
+  });
+});
+
 describe("validateFiles", () => {
   test("summary counts are correct", async () => {
     const schema = await getSchema();

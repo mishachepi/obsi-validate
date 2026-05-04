@@ -244,7 +244,9 @@ export function validateBodyLinks(
 ): ValidationError[] {
   const body = extractBody(content);
   const errors: ValidationError[] = [];
-  const linkRegex = /\[\[([^\]]+)\]\]/g;
+  // Forbid newlines and `[` inside the target so an unclosed `[[...` cannot
+  // swallow table-cell pipes or following content as a fake alias.
+  const linkRegex = /\[\[([^\]\[\r\n]+)\]\]/g;
   const seen = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = linkRegex.exec(body)) !== null) {
@@ -280,13 +282,13 @@ export function validateInlineProperties(
 ): ValidationError[] {
   const body = extractBody(content);
   const errors: ValidationError[] = [];
-  const inlineRegex = /\[([a-z_][a-z0-9_]*)::([^\]]*)\]/gi;
+  const inlineRegex = /\[([a-z_][a-z0-9_]*)::([^\]\r\n]*)\]/gi;
   let match: RegExpExecArray | null;
   while ((match = inlineRegex.exec(body)) !== null) {
     const key = match[1];
     const rawValue = match[2].trim();
 
-    const linkMatch = rawValue.match(/^\[\[([^\]]+)\]\]$/);
+    const linkMatch = rawValue.match(/^\[\[([^\]\[\r\n]+)\]\]$/);
 
     // Try to find property in schema for this entity type
     let prop: ResolvedProperty | undefined;

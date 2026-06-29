@@ -22,6 +22,9 @@ async function walkMdFiles(dir: string): Promise<string[]> {
     const entries = await readdir(d, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.name.startsWith(".")) continue;
+      // Skip archive / shadow-override trees: their duplicate-basename notes
+      // would shadow canonical notes in the link index (first-wins).
+      if (entry.isDirectory() && (entry.name === "_archive" || entry.name === "_skill")) continue;
       const fullPath = join(d, entry.name);
       if (entry.isDirectory()) {
         await walk(fullPath);
@@ -166,7 +169,11 @@ program
     // Build vault index when check-links is enabled
     if (options.checkLinks) {
       const matter = (await import("gray-matter")).default;
-      const vaultRoot = targetStat.isFile() ? (options.vaultDir ?? vaultDir) : vaultDir;
+      // Vault index must cover the WHOLE vault for cross-folder link resolution.
+      // Always prefer --vault-dir; only fall back to the target when no flag given.
+      // (Previously, validating a directory indexed only that dir → every link to a
+      //  note outside it, e.g. all Areas from _core, was a false "not found".)
+      const vaultRoot = options.vaultDir ?? vaultDir;
       const allPaths = await walkMdFiles(vaultRoot);
       const vaultIndex: VaultIndex = new Map();
       for (const p of allPaths) {

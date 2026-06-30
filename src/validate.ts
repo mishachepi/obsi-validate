@@ -228,13 +228,19 @@ export function validateFile(
   };
 }
 
-/** Extract body content (everything after frontmatter) */
+/** Extract body content (everything after frontmatter).
+ * HTML comments are stripped so wikilinks/inline-props inside `<!-- ... -->`
+ * (e.g. stale `<!-- Schema: [[components/entities/area]] -->` footers) are not
+ * validated as live links. */
 function extractBody(content: string): string {
+  let body = content;
   const firstSep = content.indexOf("---");
-  if (firstSep === -1) return content;
-  const secondSep = content.indexOf("---", firstSep + 3);
-  if (secondSep === -1) return content;
-  return content.slice(secondSep + 3);
+  if (firstSep !== -1) {
+    const secondSep = content.indexOf("---", firstSep + 3);
+    if (secondSep !== -1) body = content.slice(secondSep + 3);
+  }
+  // Drop HTML comments (multiline) — their contents are not live links/props.
+  return body.replace(/<!--[\s\S]*?-->/g, "");
 }
 
 /** Validate body wikilinks exist in vault index */
@@ -260,6 +266,10 @@ export function validateBodyLinks(
     if (!target || seen.has(target)) continue;
     seen.add(target);
 
+    // Skip wikilinks to non-markdown attachments (pdf, images, audio, etc.)
+    // The vault index only contains .md notes.
+    if (isAttachmentLink(target)) continue;
+
     const entry = index.get(target) ?? index.get(target.split("/").pop()!);
     if (!entry) {
       errors.push({
@@ -272,6 +282,48 @@ export function validateBodyLinks(
   return errors;
 }
 
+/** Coerce a raw inline Dataview value (always a string) to the type declared
+ * by its property schema, mirroring how Obsidian/Dataview interpret inline
+ * fields. List/links → split into an array; number/boolean → coerce when the
+ * literal is unambiguous, otherwise leave as-is so real errors still surface. */
+function coerceInlineValue(
+  rawValue: string,
+  linkMatch: RegExpMatchArray | null,
+  propertyType: string,
+): unknown {
+  const scalarValue = linkMatch ? `[[${linkMatch[1]}]]` : rawValue;
+  switch (propertyType) {
+    case "list":
+    case "links":
+      return rawValue
+        .split(/\s*,\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    case "number": {
+      // Coerce numeric literals only; leave non-numeric strings to fail loudly.
+      if (rawValue !== "" && Number.isFinite(Number(rawValue))) {
+        return Number(rawValue);
+      }
+      return scalarValue;
+    }
+    case "boolean": {
+      if (rawValue === "true") return true;
+      if (rawValue === "false") return false;
+      return scalarValue;
+    }
+    default:
+      return scalarValue;
+  }
+}
+
+/** True if wikilink target points to an attachment (non-md file). */
+function isAttachmentLink(target: string): boolean {
+  const m = target.match(/\.([a-z0-9]{1,5})$/i);
+  if (!m) return false;
+  const ext = m[1].toLowerCase();
+  return ext !== "md";
+}
+
 /** Validate inline Dataview properties [key::value] in body */
 export function validateInlineProperties(
   content: string,
@@ -282,7 +334,7 @@ export function validateInlineProperties(
 ): ValidationError[] {
   const body = extractBody(content);
   const errors: ValidationError[] = [];
-  const inlineRegex = /\[([a-z_][a-z0-9_]*)::([^\]\r\n]*)\]/gi;
+  const inlineRegex = /\[([a-z_][a-z0-9_]*)::((?:\[\[[^\[\]\r\n]+\]\]|[^\]\r\n])*)\]/gi;
   let match: RegExpExecArray | null;
   while ((match = inlineRegex.exec(body)) !== null) {
     const key = match[1];
@@ -300,7 +352,12 @@ export function validateInlineProperties(
     }
 
     if (prop) {
-      const value = linkMatch ? `[[${linkMatch[1]}]]` : rawValue;
+      // Inline Dataview notation always yields a string. Coerce it to match the
+      // property's declared type so number/boolean metrics like `[walk::8000]`
+      // or `[done::true]` don't report spurious "expected number/boolean,
+      // received string" errors. Non-coercible values fall through unchanged so
+      // genuinely malformed input still surfaces a real error.
+      const value = coerceInlineValue(rawValue, linkMatch, prop.property_type);
       if (prop.validator) {
         const result = prop.validator.safeParse(value);
         if (!result.success) {
@@ -338,7 +395,7 @@ export function validateInlineProperties(
       const hash = target.indexOf("#");
       if (hash >= 0) target = target.slice(0, hash);
       target = target.trim();
-      if (target) {
+      if (target && !isAttachmentLink(target)) {
         const entry = index.get(target) ?? index.get(target.split("/").pop()!);
         if (!entry) {
           errors.push({

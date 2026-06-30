@@ -374,6 +374,89 @@ describe("validateBodyLinks", () => {
   });
 });
 
+describe("inline property coercion", () => {
+  function numberSchema() {
+    return loadSchema(
+      [
+        {
+          path: "/v/entities/day_entity.md",
+          content:
+            "---\nentity_name: day\nallow_extra: true\nproperties:\n  walk: {}\n  done: {}\n  with: {}\n---",
+        },
+      ],
+      [
+        {
+          path: "/v/properties/walk_property.md",
+          content: "---\nproperty_name: walk\nproperty_type: number\n---",
+        },
+        {
+          path: "/v/properties/done_property.md",
+          content: "---\nproperty_name: done\nproperty_type: boolean\n---",
+        },
+        {
+          path: "/v/properties/with_property.md",
+          content: "---\nproperty_name: with\nproperty_type: links\n---",
+        },
+      ],
+    );
+  }
+
+  const linkOpts = {
+    typeKeyField: "type_key",
+    checkLinks: true,
+    vaultIndex: new Map() as VaultIndex,
+  };
+
+  test("numeric inline metric [walk::8000] does not report a type error", () => {
+    const file = {
+      path: "/v/days/d.md",
+      content: "---\ntype_key: day\n---\n\nWalked today [walk::8000]\n",
+    };
+    const result = validateFile(file, numberSchema(), linkOpts);
+    expect(
+      result.errors.find((e) => e.field === "__inline__walk"),
+    ).toBeUndefined();
+  });
+
+  test("non-numeric inline value [walk::abc] still reports a type error", () => {
+    const file = {
+      path: "/v/days/d.md",
+      content: "---\ntype_key: day\n---\n\nbad [walk::abc]\n",
+    };
+    const result = validateFile(file, numberSchema(), linkOpts);
+    expect(
+      result.errors.find((e) => e.field === "__inline__walk"),
+    ).toBeDefined();
+  });
+
+  test("boolean inline value [done::true] does not report a type error", () => {
+    const file = {
+      path: "/v/days/d.md",
+      content: "---\ntype_key: day\n---\n\n[done::true]\n",
+    };
+    const result = validateFile(file, numberSchema(), linkOpts);
+    expect(
+      result.errors.find((e) => e.field === "__inline__done"),
+    ).toBeUndefined();
+  });
+});
+
+describe("HTML comment links are ignored", () => {
+  test("wikilink inside <!-- ... --> is not validated as a live link", () => {
+    const content = [
+      "---",
+      "type_key: note",
+      "---",
+      "",
+      "real content",
+      "<!-- Schema: [[components/entities/area]] -->",
+      "",
+    ].join("\n");
+    const errors = validateBodyLinks(content, new Map());
+    expect(errors).toHaveLength(0);
+  });
+});
+
 describe("validateFiles", () => {
   test("summary counts are correct", async () => {
     const schema = await getSchema();

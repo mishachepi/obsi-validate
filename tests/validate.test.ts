@@ -372,6 +372,44 @@ describe("validateBodyLinks", () => {
     const errors = validateBodyLinks(content, indexWith("Real Note"));
     expect(errors).toHaveLength(0);
   });
+
+  test("escaped-pipe [[target\\|alias]] in a table cell resolves to target", () => {
+    const content = [
+      "---",
+      "type_key: note",
+      "---",
+      "",
+      "| Activity | Link |",
+      "|----------|------|",
+      "| Climb    | [[HO2 - Climbing Start\\|Climbing]] |",
+      "",
+    ].join("\n");
+    const errors = validateBodyLinks(content, indexWith("HO2 - Climbing Start"));
+    expect(errors).toHaveLength(0);
+  });
+
+  test("wikilinks inside a fenced code block are ignored", () => {
+    const content = [
+      "---",
+      "type_key: note",
+      "---",
+      "",
+      "```markdown",
+      "example: [[Epic A]] links to [[Area B]]",
+      "```",
+      "",
+      "real [[Real Note]]",
+      "",
+    ].join("\n");
+    const errors = validateBodyLinks(content, indexWith("Real Note"));
+    expect(errors).toHaveLength(0);
+  });
+
+  test("wikilink inside inline code is ignored", () => {
+    const content = "---\ntype_key: note\n---\n\nuse `[[Fake Link]]` syntax\n";
+    const errors = validateBodyLinks(content, new Map());
+    expect(errors).toHaveLength(0);
+  });
 });
 
 describe("inline property coercion", () => {

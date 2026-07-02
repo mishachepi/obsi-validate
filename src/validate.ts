@@ -239,8 +239,14 @@ function extractBody(content: string): string {
     const secondSep = content.indexOf("---", firstSep + 3);
     if (secondSep !== -1) body = content.slice(secondSep + 3);
   }
-  // Drop HTML comments (multiline) — their contents are not live links/props.
-  return body.replace(/<!--[\s\S]*?-->/g, "");
+  // Strip regions whose wikilinks/inline-props are illustrative, not live:
+  //  - HTML comments (e.g. stale `<!-- Schema: [[...]] -->` footers)
+  //  - fenced code blocks (``` … ```) — markdown examples of link syntax
+  //  - inline code (`…`) — same, single-line
+  return body
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`\r\n]+`/g, "");
 }
 
 /** Validate body wikilinks exist in vault index */
@@ -257,7 +263,9 @@ export function validateBodyLinks(
   let match: RegExpExecArray | null;
   while ((match = linkRegex.exec(body)) !== null) {
     const raw = match[1];
-    let target = raw;
+    // Table cells escape the alias pipe as `\|` (valid Obsidian syntax); normalize
+    // it so the alias split below doesn't leave the escape backslash on the target.
+    let target = raw.replace(/\\\|/g, "|");
     const pipe = target.indexOf("|");
     if (pipe >= 0) target = target.slice(0, pipe);
     const hash = target.indexOf("#");

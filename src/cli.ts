@@ -136,6 +136,7 @@ program
   .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
   .option("--check-links", "validate body wikilinks and inline properties")
   .action(async (path, options) => {
+   try {
     const config = resolveConfig({
       schema_dir: options.schemaDir,
       vault_dir: path ?? options.vaultDir,
@@ -200,6 +201,10 @@ program
     }
 
     process.exit(summary.invalid > 0 ? 1 : 0);
+   } catch (err) {
+     console.error(`obsi-validate: ${err instanceof Error ? err.message : String(err)}`);
+     process.exit(1);
+   }
   });
 
 program.parse();

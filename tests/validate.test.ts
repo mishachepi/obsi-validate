@@ -7,6 +7,7 @@ import {
   validateFiles,
 } from "../src/validate.js";
 import type { VaultIndex } from "../src/types.js";
+import { indexKeysFor, isLinkableFile } from "../src/link-index.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 async function getSchema() {
@@ -512,5 +513,107 @@ describe("validateFiles", () => {
     expect(summary.valid).toBe(1);
     expect(summary.invalid).toBe(1);
     expect(summary.skipped).toBe(1);
+  });
+});
+
+describe("link index keys (canvas + path-style wikilinks)", () => {
+  test("markdown note is reachable by path and by basename", () => {
+    const { strong, weak } = indexKeysFor("_system/entities/_index.md");
+    expect(strong).toEqual(["_system/entities/_index"]);
+    expect(weak).toEqual(["_index"]);
+  });
+
+  test("canvas keeps its extension in both spellings", () => {
+    // Obsidian writes [[arch.canvas]] — dropping the extension breaks resolution.
+    const { strong, weak } = indexKeysFor("_system/canvases/arch.canvas");
+    expect(strong).toEqual(["_system/canvases/arch.canvas"]);
+    expect(weak).toEqual(["arch.canvas"]);
+  });
+
+  test("root-level note yields the same key twice, harmlessly", () => {
+    const { strong, weak } = indexKeysFor("Note.md");
+    expect(strong).toEqual(["Note"]);
+    expect(weak).toEqual(["Note"]);
+  });
+
+  test("windows separators normalize to forward slashes", () => {
+    expect(indexKeysFor("a\\b\\c.md").strong).toEqual(["a/b/c"]);
+  });
+
+  test("only markdown and canvas are linkable", () => {
+    expect(isLinkableFile("a.md")).toBe(true);
+    expect(isLinkableFile("a.canvas")).toBe(true);
+    expect(isLinkableFile("a.png")).toBe(false);
+    expect(isLinkableFile("a.pdf")).toBe(false);
+  });
+});
+
+describe("wikilink resolution against a path-keyed index", () => {
+  /** Index built the way the CLI builds it: strong keys win, weak are first-wins. */
+  function indexFrom(...relPaths: string[]): VaultIndex {
+    const index: VaultIndex = new Map();
+    for (const rel of relPaths) {
+      const { strong, weak } = indexKeysFor(rel);
+      const entry = { path: rel, data: {} };
+      for (const k of strong) index.set(k, entry);
+      for (const k of weak) if (!index.has(k)) index.set(k, entry);
+    }
+    return index;
+  }
+
+  const body = (link: string) => `---\ntype_key: page\n---\n\nsee ${link}\n`;
+
+  test("existing canvas embed resolves", () => {
+    const errors = validateBodyLinks(
+      body("![[arch.canvas]]"),
+      indexFrom("_system/canvases/arch.canvas"),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test("canvas by full path resolves", () => {
+    const errors = validateBodyLinks(
+      body("[[_system/canvases/arch.canvas]]"),
+      indexFrom("_system/canvases/arch.canvas"),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test("MISSING canvas still errors — the fix must not blanket-skip canvas", () => {
+    const errors = validateBodyLinks(body("![[gone.canvas]]"), indexFrom("_system/canvases/arch.canvas"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.message).toContain("gone.canvas");
+  });
+
+  test("path-style wikilink to an _index note resolves", () => {
+    const errors = validateBodyLinks(
+      body("[[_system/entities/_index]]"),
+      indexFrom("_system/entities/_index.md"),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test("path-style wikilink to a missing note still errors", () => {
+    const errors = validateBodyLinks(
+      body("[[_system/entities/nope]]"),
+      indexFrom("_system/entities/_index.md"),
+    );
+    expect(errors).toHaveLength(1);
+  });
+
+  test("path-style link with alias and heading resolves", () => {
+    const errors = validateBodyLinks(
+      body("[[_system/entities/_index#Types|the index]]"),
+      indexFrom("_system/entities/_index.md"),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test("ambiguous basename stays first-wins", () => {
+    const index = indexFrom("a/Dup.md", "b/Dup.md");
+    expect(index.get("Dup")!.path).toBe("a/Dup.md");
+    // …while each full path still resolves to its own file
+    expect(index.get("a/Dup")!.path).toBe("a/Dup.md");
+    expect(index.get("b/Dup")!.path).toBe("b/Dup.md");
   });
 });

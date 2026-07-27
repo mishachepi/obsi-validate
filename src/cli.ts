@@ -5,6 +5,7 @@ import { join, relative } from "path";
 import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
+import { indexKeysFor, isLinkableFile } from "./link-index.js";
 import type {
   RawFile,
   ValidateOptions,
@@ -14,8 +15,16 @@ import type {
   ValidationSummary,
 } from "./types.js";
 
-/** Walk directory recursively, skipping dot-directories */
-async function walkMdFiles(dir: string): Promise<string[]> {
+/** Walk directory recursively, skipping dot-directories.
+ *
+ * `mode` separates two different questions that must not share exclusions:
+ *   "targets" — files to validate. `_index.md` is excluded deliberately.
+ *   "index"   — files a wikilink may point AT. Excluding a real file here
+ *               turns a valid link into a false "not found", so this mode
+ *               keeps `_index.md` and also collects `.canvas` notes, which
+ *               Obsidian links to like any other note.
+ */
+async function walkVaultFiles(dir: string, mode: "targets" | "index"): Promise<string[]> {
   const paths: string[] = [];
 
   async function walk(d: string) {
@@ -28,7 +37,12 @@ async function walkMdFiles(dir: string): Promise<string[]> {
       const fullPath = join(d, entry.name);
       if (entry.isDirectory()) {
         await walk(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(".md") && entry.name !== "_index.md") {
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (mode === "targets") {
+        if (entry.name.endsWith(".md") && entry.name !== "_index.md") paths.push(fullPath);
+      } else if (isLinkableFile(entry.name)) {
         paths.push(fullPath);
       }
     }
@@ -36,6 +50,16 @@ async function walkMdFiles(dir: string): Promise<string[]> {
 
   await walk(dir);
   return paths;
+}
+
+/** Files to validate. */
+async function walkMdFiles(dir: string): Promise<string[]> {
+  return walkVaultFiles(dir, "targets");
+}
+
+/** Files a wikilink may resolve to. */
+async function walkLinkableFiles(dir: string): Promise<string[]> {
+  return walkVaultFiles(dir, "index");
 }
 
 /** Read all .md files into memory (for schema — small number of files) */
@@ -175,16 +199,21 @@ program
       // (Previously, validating a directory indexed only that dir → every link to a
       //  note outside it, e.g. all Areas from _core, was a false "not found".)
       const vaultRoot = options.vaultDir ?? vaultDir;
-      const allPaths = await walkMdFiles(vaultRoot);
+      const allPaths = await walkLinkableFiles(vaultRoot);
       const vaultIndex: VaultIndex = new Map();
       for (const p of allPaths) {
-        const fm = await readFrontmatterOnly(p);
+        const isCanvas = p.endsWith(".canvas");
         let data: Record<string, unknown> = {};
-        try {
-          data = matter(fm).data;
-        } catch {}
-        const basename = p.split("/").pop()!.replace(/\.md$/, "");
-        vaultIndex.set(basename, { path: p, data });
+        if (!isCanvas) {
+          const fm = await readFrontmatterOnly(p);
+          try {
+            data = matter(fm).data;
+          } catch {}
+        }
+        const entry = { path: p, data };
+        const { strong, weak } = indexKeysFor(relative(vaultRoot, p));
+        for (const key of strong) vaultIndex.set(key, entry);
+        for (const key of weak) if (!vaultIndex.has(key)) vaultIndex.set(key, entry);
       }
       validateOpts.vaultIndex = vaultIndex;
     }

@@ -114,6 +114,16 @@ export async function buildVaultIndex(app: App): Promise<VaultIndex> {
       // Skip files with YAML errors
     }
   }
+  // Canvas notes are linkable like any other note ([[arch.canvas]]) but are not
+  // markdown, so getMarkdownFiles() misses them and every canvas link reads as
+  // broken. They carry no frontmatter — presence is all that matters here.
+  for (const file of app.vault.getFiles()) {
+    if (file.extension !== "canvas") continue;
+    const entry = { path: file.path, data: {} };
+    for (const key of [file.path, file.name]) {
+      if (!index.has(key)) index.set(key, entry);
+    }
+  }
   return index;
 }
 

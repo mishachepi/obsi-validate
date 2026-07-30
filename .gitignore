@@ -27,3 +27,9 @@ dist/
 # Bun
 bun.lock
 site/
+
+# Machine-local config: absolute paths and personal permissions, never shared
+.env*
+!.env.example
+.claude/settings.local.json
+.omchi.yaml

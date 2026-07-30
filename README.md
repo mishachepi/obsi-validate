@@ -42,6 +42,7 @@ obsi-validate --vault-dir /path/to/vault
 
 ## TODO
 
+- [ ] Align `_deprecated/` handling between plugin and CLI — the plugin skips it when loading schema, the CLI does not, so an "archived" entity still validates in CI and in hooks (`src/cli.ts` walker excludes only `_archive` / `_skill`)
 - [ ] Improve entity inheritance (inherit allow_extra, multi-level UI display, abstract entities)
 - [ ] Inline decorations: red underline on invalid frontmatter values, hover tooltips
 - [ ] Quick-fix suggestions for enum values (fuzzy match "Did you mean...?")

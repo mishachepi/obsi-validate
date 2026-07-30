@@ -35,6 +35,11 @@ obsi-validate --vault-dir /path/to/vault -f json
 | `--vault-dir <path>` | Vault root | from config |
 | `-f, --format <type>` | Output: `pretty` or `json` | `pretty` |
 | `-t, --type <entity>` | Filter results by entity type | all |
+| `--check-links` | Also validate body wikilinks and inline properties | off |
+| `--type-key-field <name>` | Frontmatter field identifying the entity type | auto-detected from schema, falls back to `entity` |
+
+Body wikilinks are **not** checked unless you pass `--check-links`. A run without it
+says nothing about broken links.
 
 ## Config file
 
@@ -79,8 +84,27 @@ Total: 10 | Valid: 7 | Invalid: 2 | Skipped: 1
 
 | Code | Meaning |
 |------|---------|
-| 0 | All files valid |
+| 0 | No file has errors — **warnings and skipped files still exit 0** |
 | 1 | At least one file has errors |
+
+!!! warning "Exit code alone is not a verdict"
+    An **unknown entity type is a warning, not an error**: the file is reported as
+    `Valid`, `invalid` stays `0`, and the command exits `0`.
+
+    ```
+    ---
+    entity: totally_made_up_xyz
+    ---
+    →  ⚠ entity: Unknown entity type: totally_made_up_xyz
+       Total: 1 | Valid: 1 | Invalid: 0    exit 0
+    ```
+
+    A typo in the type name therefore *passes*, because nothing knows what to check
+    the note against. The same applies to `Skipped` files — they were never
+    validated at all.
+
+    In CI or in a hook that must block on this, parse `-f json` and fail on
+    warnings where the message matches `Unknown entity type`.
 
 ## Library API
 

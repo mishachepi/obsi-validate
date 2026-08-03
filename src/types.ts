@@ -51,6 +51,19 @@ export type EntitySchema = {
   extends?: string;
   /** If true, extra fields not in properties don't produce warnings */
   allow_extra?: boolean;
+  /**
+   * Regexes naming whole FAMILIES of valid keys, for fields a generator
+   * invents at runtime (e.g. `time_<area>`, `<category>_hours` written by the
+   * day ETL). A field matching any of these is known, so the family need not be
+   * enumerated — enumerating it demonstrably does not converge: every Area
+   * rename adds another historical key.
+   *
+   * Weaker than a named property ON PURPOSE: it asserts the NAME is expected,
+   * not that the VALUE is correct, and it cannot tell `time_wgg` from a typo
+   * `time_wgh`. Use it only where the key set is genuinely open; a fixed set
+   * still belongs in `properties`.
+   */
+  property_patterns?: string[];
   /** Files with this entity type must be in this folder (prefix match) */
   expected_folder?: string;
   /** Folder relative to entities dir (for UI grouping) */
@@ -74,6 +87,8 @@ export type VaultSchema = {
   entityMap: Map<string, ResolvedProperty[]>;
   /** Entity name → allow_extra flag */
   allowExtraMap: Map<string, boolean>;
+  /** Entity name → compiled property_patterns (inherited through `extends`) */
+  propertyPatternMap: Map<string, RegExp[]>;
   /** Entity name → expected folder path */
   expectedFolderMap: Map<string, string>;
 };

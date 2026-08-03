@@ -97,6 +97,9 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
       properties,
       extends: data.extends ?? undefined,
       allow_extra: data.allow_extra ?? undefined,
+      property_patterns: Array.isArray(data.property_patterns)
+        ? data.property_patterns.map(String)
+        : undefined,
       expected_folder: data.expected_folder ?? undefined,
       folder,
       sourcePath: file.path,
@@ -186,6 +189,8 @@ export function loadSchema(
   const entityMap = new Map<string, ResolvedProperty[]>();
   const allowExtraMap = new Map<string, boolean>();
 
+  const propertyPatternMap = new Map<string, RegExp[]>();
+  const entityByName = new Map(entities.map((e) => [e.name, e]));
   for (const entity of entities) {
     const inherited = inheritance.get(entity.name);
     const mergedProps = inherited?.properties ?? entity.properties;
@@ -214,6 +219,7 @@ export function loadSchema(
 
     entityMap.set(entity.name, resolved);
     allowExtraMap.set(entity.name, entity.allow_extra ?? false);
+    propertyPatternMap.set(entity.name, compilePatterns(entity, entityByName));
   }
 
   const expectedFolderMap = new Map<string, string>();
@@ -223,7 +229,14 @@ export function loadSchema(
     }
   }
 
-  return { entities, properties, entityMap, allowExtraMap, expectedFolderMap };
+  return {
+    entities,
+    properties,
+    entityMap,
+    allowExtraMap,
+    propertyPatternMap,
+    expectedFolderMap,
+  };
 }
 
 /** Build a Zod validator for a single property based on its schema */
@@ -285,4 +298,41 @@ function toArray(val: unknown): (string | number)[] {
   if (Array.isArray(val)) return val;
   if (val != null) return [val as string | number];
   return [];
+}
+
+
+/**
+ * Compile an entity's `property_patterns`, walking `extends` so a child inherits
+ * its parent's families.
+ *
+ * A malformed regex THROWS rather than being skipped. A pattern that silently
+ * compiles to nothing would leave the schema looking configured while every
+ * field it was meant to cover kept warning — the failure mode this whole task
+ * exists to remove, reintroduced one level up.
+ */
+function compilePatterns(
+  entity: EntitySchema,
+  byName: Map<string, EntitySchema>,
+): RegExp[] {
+  const out: RegExp[] = [];
+  const seen = new Set<string>();
+  let current: EntitySchema | undefined = entity;
+
+  while (current) {
+    for (const raw of current.property_patterns ?? []) {
+      if (seen.has(raw)) continue;
+      seen.add(raw);
+      try {
+        out.push(new RegExp(raw));
+      } catch (err) {
+        throw new Error(
+          `Entity "${current.name}": invalid property_patterns entry ${JSON.stringify(raw)} — ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    current = current.extends ? byName.get(current.extends) : undefined;
+  }
+
+  return out;
 }

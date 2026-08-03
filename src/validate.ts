@@ -116,6 +116,7 @@ export function validateFile(
 
   const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
   const allowExtra = schema.allowExtraMap.get(entityType) ?? false;
+  const propertyPatterns = schema.propertyPatternMap?.get(entityType) ?? [];
 
   // Check each frontmatter field
   for (const [field, value] of Object.entries(data)) {
@@ -124,7 +125,12 @@ export function validateFile(
     const prop = propByName.get(field);
 
     if (!prop) {
-      if (!allowExtra) {
+      // Order matters: exact name → declared key family → entity-wide escape.
+      // Patterns sit here so a generated key (time_<area>, <cat>_hours) is
+      // accepted without switching the whole entity to allow_extra, which would
+      // stop catching genuinely unknown fields — the thing this check is for.
+      const matchesFamily = propertyPatterns.some((re) => re.test(field));
+      if (!matchesFamily && !allowExtra) {
         warnings.push({ field, message: "Unknown property for this entity" });
       }
       continue;

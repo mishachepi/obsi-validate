@@ -617,3 +617,70 @@ describe("wikilink resolution against a path-keyed index", () => {
     expect(index.get("b/Dup")!.path).toBe("b/Dup.md");
   });
 });
+
+describe("property_patterns — open key families", () => {
+  // The day ETL invents keys at runtime (time_<area>, <category>_hours), and the
+  // set changes on every Area rename. Enumerating it does not converge: a single
+  // live run over days/2026 surfaced 8 more historical names right after ~15 had
+  // been registered by hand. Patterns say "this family is expected"; allow_extra
+  // would say "nothing is unexpected", which stops catching real regressions.
+
+  const patternEntity = [
+    "---",
+    "entity_name: metered_day",
+    "property_patterns:",
+    '  - "^time_"',
+    '  - "_hours$"',
+    "properties:",
+    "  date:",
+    "    required: true",
+    "---",
+  ].join("\n");
+
+  async function schemaWithPatterns() {
+    const entityFiles = await readMdFiles(join(FIXTURES, "entities"));
+    const propertyFiles = await readMdFiles(join(FIXTURES, "properties"));
+    entityFiles.push({ path: "metered_day.md", content: patternEntity });
+    return loadSchema(entityFiles, propertyFiles);
+  }
+
+  const fileWith = (fields: string[]) => ({
+    path: "day.md",
+    content: ["---", "type_key: metered_day", "date: 2026-08-03", ...fields, "---", ""].join("\n"),
+  });
+
+  test("a generated key nobody enumerated is accepted", async () => {
+    const schema = await schemaWithPatterns();
+    const res = validateFile(fileWith(["time_bio_and_energy: 3", "social_hours: 2"]), schema, opts);
+    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    expect(unknown).toEqual([]);
+  });
+
+  test("a field outside every family still warns — patterns are not allow_extra", async () => {
+    const schema = await schemaWithPatterns();
+    const res = validateFile(fileWith(["totally_unknown_field: 1"]), schema, opts);
+    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    expect(unknown.map((w) => w.field)).toEqual(["totally_unknown_field"]);
+  });
+
+  test("an entity without patterns is unaffected", async () => {
+    const schema = await schemaWithPatterns();
+    const res = validateFile(
+      { path: "t.md", content: ["---", "type_key: task", "time_wgg: 3", "---", ""].join("\n") },
+      schema,
+      opts,
+    );
+    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    expect(unknown.map((w) => w.field)).toContain("time_wgg");
+  });
+
+  test("a malformed pattern fails loudly instead of matching nothing", async () => {
+    const entityFiles = await readMdFiles(join(FIXTURES, "entities"));
+    const propertyFiles = await readMdFiles(join(FIXTURES, "properties"));
+    entityFiles.push({
+      path: "broken.md",
+      content: ["---", "entity_name: broken_day", "property_patterns:", '  - "^time_(["', "properties: {}", "---"].join("\n"),
+    });
+    expect(() => loadSchema(entityFiles, propertyFiles)).toThrow(/invalid property_patterns/);
+  });
+});

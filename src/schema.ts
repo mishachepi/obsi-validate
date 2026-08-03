@@ -204,14 +204,16 @@ export function loadSchema(
       if (propSchema) {
         resolved.push({
           ...propSchema,
-          required: config.required ?? false,
+          required: config.required ?? config.required_unless !== undefined,
+          required_unless: normaliseRequiredUnless(propName, config.required_unless),
           inheritedFrom,
         });
       } else {
         resolved.push({
           name: propName,
           property_type: "unknown",
-          required: config.required ?? false,
+          required: config.required ?? config.required_unless !== undefined,
+          required_unless: normaliseRequiredUnless(propName, config.required_unless),
           inheritedFrom,
         });
       }
@@ -335,4 +337,39 @@ function compilePatterns(
   }
 
   return out;
+}
+
+
+/**
+ * Validate and normalise a `required_unless` block.
+ *
+ * Throws on a malformed shape rather than ignoring it. A condition silently
+ * dropped would make the field unconditionally required again — the schema would
+ * look like it carried the exemption while every legacy note kept failing, which
+ * is the noise this feature exists to remove.
+ */
+function normaliseRequiredUnless(
+  propName: string,
+  raw: unknown,
+): Record<string, string[]> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(
+      `Property "${propName}": required_unless must be a map of field → list of values`,
+    );
+  }
+
+  const out: Record<string, string[]> = {};
+  for (const [field, values] of Object.entries(raw as Record<string, unknown>)) {
+    const list = Array.isArray(values) ? values : [values];
+    if (list.length === 0) {
+      throw new Error(
+        `Property "${propName}": required_unless.${field} lists no values — ` +
+          `an empty condition can never exempt anything, so the field would stay ` +
+          `unconditionally required while appearing conditional`,
+      );
+    }
+    out[field] = list.map(String);
+  }
+  return Object.keys(out).length ? out : undefined;
 }

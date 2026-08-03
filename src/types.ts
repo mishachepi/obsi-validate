@@ -6,6 +6,28 @@ export type RawFile = { path: string; content: string };
 /** Property field config as declared in entity's properties block */
 export type EntityPropertyConfig = {
   required?: boolean;
+  /**
+   * Required, EXCEPT when a sibling field holds one of the listed values:
+   *
+   *   dod:
+   *     required_unless:
+   *       status: [Closed, Rejected]
+   *
+   * For rules introduced after history accumulated. Making `dod` unconditionally
+   * required marked 196 already-closed notes invalid forever — they cannot be
+   * fixed, because inventing an acceptance criterion for someone else's finished
+   * work is fabrication. Permanent unfixable noise teaches people to ignore the
+   * validator exactly where it still matters (139 open notes genuinely missing it).
+   *
+   * Declaring this IMPLIES `required: true` — "required unless X" is a statement
+   * of requiredness. Needing both keys would mean a schema that carries the
+   * exemption and enforces nothing, which is the silent-no-op this replaces.
+   *
+   * Exempt if ANY listed field matches ANY of its values. Comparison is by exact
+   * string, so `Closed` does not match `closed` — statuses here are a controlled
+   * vocabulary, and loose matching would quietly excuse typos.
+   */
+  required_unless?: Record<string, string[]>;
 };
 
 /** Constraints for link/list properties — validate what the link points to */
@@ -75,6 +97,8 @@ export type EntitySchema = {
 /** Resolved property: property schema + per-entity config */
 export type ResolvedProperty = PropertySchema & {
   required: boolean;
+  /** Condition that lifts `required` — see EntityPropertyConfig.required_unless */
+  required_unless?: Record<string, string[]>;
   /** Which entity this property was inherited from (undefined = own) */
   inheritedFrom?: string;
 };

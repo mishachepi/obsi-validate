@@ -684,3 +684,89 @@ describe("property_patterns — open key families", () => {
     expect(() => loadSchema(entityFiles, propertyFiles)).toThrow(/invalid property_patterns/);
   });
 });
+
+describe("required_unless — conditional requirement", () => {
+  // `dod` is required by user ruling, but the rule arrived after history had
+  // accumulated: 196 already-closed notes can never satisfy it, because writing
+  // an acceptance criterion for someone else's finished work is fabrication.
+  // Permanent unfixable noise teaches people to ignore the validator exactly
+  // where 139 open notes genuinely need it.
+
+  const entity = [
+    "---",
+    "entity_name: conditional_task",
+    "properties:",
+    "  status:",
+    "    required: true",
+    "  dod:",
+    "    required_unless:",
+    "      status: [Closed, Rejected]",
+    "---",
+  ].join("\n");
+
+  async function schemaWith(extra: string = entity) {
+    const entityFiles = await readMdFiles(join(FIXTURES, "entities"));
+    const propertyFiles = await readMdFiles(join(FIXTURES, "properties"));
+    entityFiles.push({ path: "conditional_task.md", content: extra });
+    return loadSchema(entityFiles, propertyFiles);
+  }
+
+  const note = (fields: string[]) => ({
+    path: "n.md",
+    content: ["---", "type_key: conditional_task", ...fields, "---", ""].join("\n"),
+  });
+
+  const dodErrors = (res: { errors: { field: string }[] }) =>
+    res.errors.filter((e) => e.field === "dod");
+
+  test("closed note without dod is valid", async () => {
+    const schema = await schemaWith();
+    expect(dodErrors(validateFile(note(["status: Closed"]), schema, opts))).toEqual([]);
+  });
+
+  test("rejected note without dod is valid", async () => {
+    const schema = await schemaWith();
+    expect(dodErrors(validateFile(note(["status: Rejected"]), schema, opts))).toEqual([]);
+  });
+
+  test("open note without dod is INVALID — the rule still bites", async () => {
+    const schema = await schemaWith();
+    const res = validateFile(note(["status: Backlog"]), schema, opts);
+    expect(dodErrors(res).length).toBe(1);
+  });
+
+  test("open note with dod is valid", async () => {
+    const schema = await schemaWith();
+    const res = validateFile(note(["status: Backlog", "dod: something checkable"]), schema, opts);
+    expect(dodErrors(res)).toEqual([]);
+  });
+
+  test("a MISSING status does not exempt — absence is not a value", async () => {
+    const schema = await schemaWith();
+    expect(dodErrors(validateFile(note(["title: x"]), schema, opts)).length).toBe(1);
+  });
+
+  test("comparison is exact — 'closed' does not pass for 'Closed'", async () => {
+    const schema = await schemaWith();
+    expect(dodErrors(validateFile(note(["status: closed"]), schema, opts)).length).toBe(1);
+  });
+
+  test("plain required is untouched when no condition is declared", async () => {
+    const schema = await schemaWith();
+    const res = validateFile(note(["dod: x"]), schema, opts);
+    expect(res.errors.filter((e) => e.field === "status").length).toBe(1);
+  });
+
+  test("an empty condition list throws instead of silently never exempting", async () => {
+    const broken = [
+      "---",
+      "entity_name: broken_cond",
+      "properties:",
+      "  dod:",
+      "    required_unless:",
+      "      status: []",
+      "---",
+    ].join("\n");
+    await expect(schemaWith(broken)).rejects.toThrow(/lists no values/);
+  });
+});

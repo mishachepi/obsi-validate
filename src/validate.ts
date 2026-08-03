@@ -202,6 +202,7 @@ export function validateFile(
 
   // Check required fields
   for (const prop of resolvedProps) {
+    if (isExemptFromRequired(prop, data)) continue;
     if (prop.required && !(prop.name in data)) {
       errors.push({
         field: prop.name,
@@ -530,4 +531,26 @@ function validateLinkTarget(
   }
 
   return errors;
+}
+
+
+/**
+ * True when a `required_unless` condition lifts the requirement for this note.
+ *
+ * Exempt if ANY listed field holds ANY of its listed values, compared as exact
+ * strings. A missing condition field does NOT exempt: absence is not a value,
+ * and treating it as one would excuse the very notes the rule targets.
+ */
+function isExemptFromRequired(
+  prop: { required_unless?: Record<string, string[]> },
+  data: Record<string, unknown>,
+): boolean {
+  const cond = prop.required_unless;
+  if (!cond) return false;
+  return Object.entries(cond).some(([field, values]) => {
+    if (!(field in data)) return false;
+    const actual = data[field];
+    if (actual === null || actual === undefined) return false;
+    return values.includes(String(actual));
+  });
 }

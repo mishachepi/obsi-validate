@@ -770,3 +770,78 @@ describe("required_unless — conditional requirement", () => {
     await expect(schemaWith(broken)).rejects.toThrow(/lists no values/);
   });
 });
+
+describe("inline markers honour etl.value_map", () => {
+  // `fm` folds a controlled vocabulary into the declared type (mood good -> 8)
+  // using the property's own etl.value_map. The validator type-checked the raw
+  // word instead, so `[mood:: good]` failed as "expected number, received
+  // string" on data that is correct end-to-end — and validate-hook runs on every
+  // edit, so the false failure fired on every future touch of those days.
+
+  const moodProperty = [
+    "---",
+    "property_name: mood",
+    "property_type: number",
+    "etl:",
+    "  source: inline_field",
+    "  marker: mood",
+    "  rule: DIRECT",
+    "  value_map:",
+    "    good: 8",
+    "    neutral: 5",
+    "    bad: 3",
+    "---",
+  ].join("\n");
+
+  const entity = [
+    "---",
+    "entity_name: mapped_day",
+    "properties:",
+    "  mood: {}",
+    "---",
+  ].join("\n");
+
+  async function schemaWithMap() {
+    const entityFiles = await readMdFiles(join(FIXTURES, "entities"));
+    const propertyFiles = await readMdFiles(join(FIXTURES, "properties"));
+    entityFiles.push({ path: "mapped_day.md", content: entity });
+    propertyFiles.push({ path: "mood_property.md", content: moodProperty });
+    return loadSchema(entityFiles, propertyFiles);
+  }
+
+  const note = (body: string) => ({
+    path: "d.md",
+    content: ["---", "type_key: mapped_day", "---", "", body, ""].join("\n"),
+  });
+
+  const inlineErrors = (res: { errors: { field: string }[] }) =>
+    res.errors.filter((e) => e.field.startsWith("__inline__"));
+
+  const opts2 = { typeKeyField: "type_key", checkLinks: true, vaultIndex: new Map() as never };
+
+  test("a mapped word validates against the mapped value", async () => {
+    const schema = await schemaWithMap();
+    for (const word of ["good", "neutral", "bad"]) {
+      const res = validateFile(note(`- [a] [mood:: ${word}]`), schema, opts2);
+      expect(inlineErrors(res)).toEqual([]);
+    }
+  });
+
+  test("a plain number still validates", async () => {
+    const schema = await schemaWithMap();
+    expect(inlineErrors(validateFile(note("- [a] [mood:: 7]"), schema, opts2))).toEqual([]);
+  });
+
+  test("an unmapped word still FAILS — the map is not an escape hatch", async () => {
+    const schema = await schemaWithMap();
+    const res = validateFile(note("- [a] [mood:: gooood]"), schema, opts2);
+    expect(inlineErrors(res).length).toBe(1);
+  });
+
+  test("properties without a value_map are unaffected", async () => {
+    const schema = await schemaWithMap();
+    const res = validateFile(note("- [a] [mood:: good] [walk:: abc]"), schema, opts2);
+    const fields = inlineErrors(res).map((e) => e.field);
+    expect(fields).not.toContain("__inline__mood");
+  });
+});

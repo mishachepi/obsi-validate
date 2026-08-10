@@ -58,6 +58,12 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
       nullable: data.nullable ?? undefined,
       link_constraints: linkConstraints,
       custom_validator: data.custom_validator ?? undefined,
+      value_map:
+        data.etl && typeof data.etl === "object" && !Array.isArray(data.etl) &&
+        (data.etl as Record<string, unknown>).value_map &&
+        typeof (data.etl as Record<string, unknown>).value_map === "object"
+          ? ((data.etl as Record<string, unknown>).value_map as Record<string, unknown>)
+          : undefined,
       folder,
       sourcePath: file.path,
     };

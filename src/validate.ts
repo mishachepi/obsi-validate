@@ -372,7 +372,20 @@ export function validateInlineProperties(
       // or `[done::true]` don't report spurious "expected number/boolean,
       // received string" errors. Non-coercible values fall through unchanged so
       // genuinely malformed input still surfaces a real error.
-      const value = coerceInlineValue(rawValue, linkMatch, prop.property_type);
+      // Apply the property's own etl.value_map first — the same fold `fm` does
+      // when computing frontmatter. Without it a controlled vocabulary
+      // (`[mood::good]`) is type-checked as the raw word against
+      // `property_type: number` and fails on data that is correct end-to-end.
+      // An unmapped word falls through unchanged, so a genuine typo
+      // (`[mood::gooood]`) still surfaces.
+      const mapped =
+        prop.value_map && Object.prototype.hasOwnProperty.call(prop.value_map, rawValue)
+          ? prop.value_map[rawValue]
+          : undefined;
+      const value =
+        mapped !== undefined
+          ? mapped
+          : coerceInlineValue(rawValue, linkMatch, prop.property_type);
       if (prop.validator) {
         const result = prop.validator.safeParse(value);
         if (!result.success) {

@@ -56,6 +56,17 @@ export type PropertySchema = {
   nullable?: boolean;
   /** JS expression for custom post-validation (receives `value` variable, returns true/false or error string) */
   custom_validator?: string;
+  /**
+   * `etl.value_map` from the property note: the vocabulary the day ETL folds into
+   * the declared type, e.g. mood `good -> 8`.
+   *
+   * The validator must apply the SAME map before type-checking an inline marker.
+   * `fm` reads it and computes `mood: 8` correctly; without it here,
+   * `[mood::good]` was reported as "expected number, received string" on data
+   * that is correct end-to-end — and validate-hook runs on every edit, so the
+   * false failure fires on every future touch of those days.
+   */
+  value_map?: Record<string, unknown>;
   /** Compiled Zod validator for this property's value */
   validator?: ZodTypeAny;
   /** Folder relative to properties dir (for UI grouping) */

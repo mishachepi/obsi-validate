@@ -292,7 +292,23 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.union([z.string(), z.array(z.string())]);
 
     case "list":
-      return z.array(z.unknown());
+      // Scalar tolerance (user ruling 18.08): both YAML representations of a
+      // one-element list are legal — `assignee: "[[X]]"` and the block form.
+      // Half the vault is written by hand or by tools that emit the scalar
+      // form; rejecting it ("Expected array, received string") punished a
+      // legal document. A scalar is treated as a one-item list, mirroring
+      // "links" above and the link_constraints walker in validate.ts, which
+      // already coerce scalar↔array. Genuinely broken shapes (a YAML mapping
+      // where a list belongs) still fail.
+      return z.union(
+        [z.array(z.unknown()), z.string(), z.number(), z.boolean()],
+        {
+          errorMap: () => ({
+            message:
+              "Expected a list or a single scalar value (mappings and empty values are not lists)",
+          }),
+        },
+      );
 
     case "emoji":
       return z.string().emoji({ message: "Must be an emoji" });

@@ -10,7 +10,7 @@ import type {
   ValidationError,
   ResolvedProperty,
 } from "./types.js";
-import { DEFAULT_ENTITY_FIELD } from "./constants.js";
+import { DEFAULT_ENTITY_FIELD, TASK_INTAKE_CUTOFF } from "./constants.js";
 
 /** Validate a single file's frontmatter against the vault schema */
 export function validateFile(
@@ -211,6 +211,11 @@ export function validateFile(
     }
   }
 
+  // Task-intake detector: new tasks must follow the obsi-tasks creation canon
+  if (entityType === "task") {
+    errors.push(...validateTaskIntake(file.content, data));
+  }
+
   // Body link and inline property validation
   if (options?.checkLinks && options.vaultIndex) {
     const bodyLinkErrors = validateBodyLinks(file.content, options.vaultIndex);
@@ -233,6 +238,97 @@ export function validateFile(
     errors,
     warnings,
   };
+}
+
+const INTAKE_HINT =
+  "new tasks are created only via the obsi-tasks skill (tasknotes:capture + fm set), see _claude/skills/obsi-tasks";
+
+/** Extract the raw (unparsed) text of a top-level frontmatter scalar value.
+ * Needed because YAML parses both `2026-08-18` and a full ISO timestamp into
+ * Date objects, erasing whether the author wrote a time component. */
+function rawFrontmatterValue(content: string, key: string): string | null {
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fmMatch) return null;
+  const line = fmMatch[1].match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"));
+  if (!line) return null;
+  return line[1].trim().replace(/^["']|["']$/g, "") || null;
+}
+
+/** Normalize a link-ish frontmatter value to a list of non-empty items.
+ * Mirrors the vault-wide scalar tolerance: a single string counts as a
+ * one-item list; null/undefined/"" count as empty. */
+function asItems(value: unknown): unknown[] {
+  if (value === null || value === undefined || value === "") return [];
+  const arr = Array.isArray(value) ? value : [value];
+  return arr.filter((v) => v !== null && v !== undefined && v !== "");
+}
+
+/**
+ * Handwritten-task detector (user ratification 2026-08-17, intake model §2 +
+ * amendment same day). For tasks with `created` >= TASK_INTAKE_CUTOFF:
+ *   (а) `created` must be a full ISO timestamp with time — only
+ *       tasknotes:capture stamps that shape;
+ *   (б) `created_by` is required, exactly one author link;
+ *   (в) `epic` must be non-empty (amendment, user ruling 17.08);
+ * every error directs to the obsi-tasks skill.
+ * Grandfathering: tasks created before the cutoff are exempt, and so are
+ * tasks with no/unparseable `created` at all — 448 legacy tasks carry no
+ * `created` (measured 17.08 on the live vault), so treating absence as
+ * post-cutoff would flag them all. Known bypass: a new handwritten task that
+ * omits `created` entirely escapes this detector; closing that requires
+ * `created: {required: true}` in task_entity (schema DSL, orchestrator's
+ * call), not detector logic.
+ */
+export function validateTaskIntake(
+  content: string,
+  data: Record<string, unknown>,
+): ValidationError[] {
+  const created = data["created"];
+  let createdDate: Date | null = null;
+  if (created instanceof Date) {
+    createdDate = created;
+  } else if (typeof created === "string") {
+    const d = new Date(created);
+    if (!Number.isNaN(d.getTime())) createdDate = d;
+  }
+  if (!createdDate || createdDate.getTime() < TASK_INTAKE_CUTOFF.getTime()) {
+    return []; // legacy task (pre-cutoff or no parseable created) — grandfathered
+  }
+
+  const errors: ValidationError[] = [];
+
+  // (а) ISO timestamp with time, checked against the raw text (YAML turns
+  // both date-only and full timestamps into Date objects).
+  const rawCreated = rawFrontmatterValue(content, "created");
+  if (!rawCreated || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawCreated)) {
+    errors.push({
+      field: "created",
+      message: `created must be a full ISO timestamp with time — ${INTAKE_HINT}`,
+      received: rawCreated,
+    });
+  }
+
+  // (б) created_by — required, exactly one author link
+  const createdBy = asItems(data["created_by"]);
+  if (createdBy.length !== 1) {
+    errors.push({
+      field: "created_by",
+      message: `created_by is required for new tasks (exactly one author link: [[agent-<slug>]] or [[Mikhail Chepkin]]) — ${INTAKE_HINT}`,
+      received: data["created_by"] ?? null,
+    });
+  }
+
+  // (в) epic — non-empty
+  const epic = asItems(data["epic"]);
+  if (epic.length === 0) {
+    errors.push({
+      field: "epic",
+      message: `epic is required for new tasks (no natural epic → ask the user before creating) — ${INTAKE_HINT}`,
+      received: data["epic"] ?? null,
+    });
+  }
+
+  return errors;
 }
 
 /** Extract body content (everything after frontmatter).

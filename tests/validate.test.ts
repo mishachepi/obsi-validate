@@ -318,6 +318,186 @@ describe("link constraints in property values", () => {
     // No zod failure on the scalar value
     expect(result.errors.find((e) => e.field === "epic")).toBeUndefined();
   });
+
+  // Scalar tolerance for `list` properties (user ruling 18.08): both YAML
+  // representations of a one-element list are legal. `assignee` is
+  // property_type: list and the scalar form used to fail with
+  // "Expected array, received string" on hand-written notes.
+  describe("list property scalar tolerance", () => {
+    const listSchema = () =>
+      loadSchema(
+        [
+          {
+            path: "/v/entities/task_entity.md",
+            content: "---\nentity_name: task\nproperties:\n  assignee: {}\n---",
+          },
+        ],
+        [
+          {
+            path: "/v/properties/assignee_property.md",
+            content: "---\nproperty_name: assignee\nproperty_type: list\n---",
+          },
+        ],
+      );
+
+    test("scalar string is accepted as a one-item list", async () => {
+      const schema = await listSchema();
+      const file = {
+        path: "/v/tasks/x.md",
+        content: '---\ntype_key: task\nassignee: "[[Mikhail Chepkin]]"\n---',
+      };
+      const result = validateFile(file, schema, { typeKeyField: "type_key" });
+      expect(result.errors.find((e) => e.field === "assignee")).toBeUndefined();
+    });
+
+    test("YAML block list is still accepted", async () => {
+      const schema = await listSchema();
+      const file = {
+        path: "/v/tasks/x.md",
+        content: [
+          "---",
+          "type_key: task",
+          "assignee:",
+          '  - "[[Mikhail Chepkin]]"',
+          '  - "[[agent-area-vault-tools]]"',
+          "---",
+        ].join("\n"),
+      };
+      const result = validateFile(file, schema, { typeKeyField: "type_key" });
+      expect(result.errors.find((e) => e.field === "assignee")).toBeUndefined();
+    });
+
+    test("a YAML mapping where a list belongs still fails", async () => {
+      const schema = await listSchema();
+      const file = {
+        path: "/v/tasks/x.md",
+        content: [
+          "---",
+          "type_key: task",
+          "assignee:",
+          "  name: broken",
+          "---",
+        ].join("\n"),
+      };
+      const result = validateFile(file, schema, { typeKeyField: "type_key" });
+      expect(result.errors.find((e) => e.field === "assignee")).toBeDefined();
+    });
+  });
+
+  describe("task intake detector", () => {
+    const taskSchema = () =>
+      loadSchema(
+        [
+          {
+            path: "/v/entities/task_entity.md",
+            content: "---\nentity_name: task\nproperties:\n  assignee: {}\n---",
+          },
+        ],
+        [],
+      );
+    const opts = { typeKeyField: "type_key" };
+    const intakeErrors = (result: { errors: { field: string; message: string }[] }) =>
+      result.errors.filter((e) => ["created", "created_by", "epic"].includes(e.field));
+
+    test("canonical post-cutoff task passes", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/new.md",
+        content: [
+          "---",
+          "type_key: task",
+          "created: 2026-08-19T10:15:00.000+02:00",
+          "created_by:",
+          '  - "[[agent-core]]"',
+          "epic:",
+          '  - "[[LO5 - Obsi Pydantic]]"',
+          "---",
+        ].join("\n"),
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+
+    test("legacy pre-cutoff task is grandfathered (date-only created, no created_by/epic)", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/old.md",
+        content: "---\ntype_key: task\ncreated: 2026-04-19\n---",
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+
+    test("post-cutoff task with date-only created fails on all three, message points to obsi-tasks", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/handwritten.md",
+        content: "---\ntype_key: task\ncreated: 2026-08-19\n---",
+      };
+      const errs = intakeErrors(validateFile(file, schema, opts));
+      expect(errs.map((e) => e.field).sort()).toEqual(["created", "created_by", "epic"]);
+      for (const e of errs) expect(e.message).toContain("obsi-tasks");
+    });
+
+    test("task without created is grandfathered (448 legacy tasks carry none)", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/no-created.md",
+        content: "---\ntype_key: task\n---",
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+
+    test("empty epic list and two-author created_by both fail", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/partial.md",
+        content: [
+          "---",
+          "type_key: task",
+          "created: 2026-08-19T10:15:00.000+02:00",
+          "created_by:",
+          '  - "[[agent-core]]"',
+          '  - "[[Mikhail Chepkin]]"',
+          "epic: []",
+          "---",
+        ].join("\n"),
+      };
+      const errs = intakeErrors(validateFile(file, schema, opts));
+      expect(errs.map((e) => e.field).sort()).toEqual(["created_by", "epic"]);
+    });
+
+    test("scalar created_by and scalar epic are accepted (vault-wide scalar tolerance)", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/scalar.md",
+        content: [
+          "---",
+          "type_key: task",
+          'created: "2026-08-19T10:15:00.000+02:00"',
+          'created_by: "[[agent-core]]"',
+          'epic: "[[LO5 - Obsi Pydantic]]"',
+          "---",
+        ].join("\n"),
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+
+    test("non-task entities are untouched by the detector", async () => {
+      const schema = await loadSchema(
+        [
+          {
+            path: "/v/entities/epic_entity.md",
+            content: "---\nentity_name: epic\nproperties: {}\n---",
+          },
+        ],
+        [],
+      );
+      const file = {
+        path: "/v/epics/e.md",
+        content: "---\ntype_key: epic\ncreated: 2026-08-19\n---",
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+  });
 });
 
 describe("validateBodyLinks", () => {

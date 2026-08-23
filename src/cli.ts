@@ -5,7 +5,7 @@ import { join, relative } from "path";
 import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
-import { indexKeysFor, isLinkableFile } from "./link-index.js";
+import { indexKeysFor, isLinkableFile, aliasKeysFor } from "./link-index.js";
 import type {
   RawFile,
   ValidateOptions,
@@ -201,6 +201,7 @@ program
       const vaultRoot = options.vaultDir ?? vaultDir;
       const allPaths = await walkLinkableFiles(vaultRoot);
       const vaultIndex: VaultIndex = new Map();
+      const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
       for (const p of allPaths) {
         const isCanvas = p.endsWith(".canvas");
         let data: Record<string, unknown> = {};
@@ -211,9 +212,18 @@ program
           } catch {}
         }
         const entry = { path: p, data };
+        entries.push(entry);
         const { strong, weak } = indexKeysFor(relative(vaultRoot, p));
         for (const key of strong) vaultIndex.set(key, entry);
         for (const key of weak) if (!vaultIndex.has(key)) vaultIndex.set(key, entry);
+      }
+      // Second pass: alias keys fill gaps only. Every file's own path/basename
+      // is already registered above, so a note can never be shadowed by
+      // another note's alias — only genuinely unclaimed names resolve.
+      for (const entry of entries) {
+        for (const alias of aliasKeysFor(entry.data)) {
+          if (!vaultIndex.has(alias)) vaultIndex.set(alias, entry);
+        }
       }
       validateOpts.vaultIndex = vaultIndex;
     }

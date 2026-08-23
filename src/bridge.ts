@@ -6,6 +6,7 @@ import {
   generatePropertyFrontmatter,
 } from "./ui/yamlWriter";
 import matter from "gray-matter";
+import { aliasKeysFor } from "./link-index";
 import type {
   RawFile,
   VaultSchema,
@@ -98,6 +99,7 @@ export async function bridgeValidateFile(
 export async function buildVaultIndex(app: App): Promise<VaultIndex> {
   const index: VaultIndex = new Map();
   const files = app.vault.getMarkdownFiles();
+  const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
   for (const file of files) {
     const content = await app.vault.cachedRead(file);
     try {
@@ -105,13 +107,25 @@ export async function buildVaultIndex(app: App): Promise<VaultIndex> {
       const baseName = file.basename;
       // Full path always wins (unique key)
       const pathNoExt = file.path.replace(/\.md$/, "");
-      index.set(pathNoExt, { path: file.path, data });
+      const entry = { path: file.path, data };
+      entries.push(entry);
+      index.set(pathNoExt, entry);
       // Basename only if no duplicate — first-wins for ambiguous short links
       if (!index.has(baseName)) {
-        index.set(baseName, { path: file.path, data });
+        index.set(baseName, entry);
       }
     } catch {
       // Skip files with YAML errors
+    }
+  }
+  // Alias resolution — same rule as the CLI (link-index.ts:aliasKeysFor): a
+  // note's `aliases:` frontmatter makes it reachable under those names too,
+  // matching what Obsidian's own link resolution already does. Filled only
+  // after every real basename above, so an alias can never shadow another
+  // note's own name.
+  for (const entry of entries) {
+    for (const alias of aliasKeysFor(entry.data)) {
+      if (!index.has(alias)) index.set(alias, entry);
     }
   }
   // Canvas notes are linkable like any other note ([[arch.canvas]]) but are not

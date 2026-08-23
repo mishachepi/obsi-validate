@@ -8,12 +8,21 @@ export type Config = {
   /** Frontmatter field for entity type — undefined means caller should auto-detect */
   type_key_field?: string;
   default_type: string;
+  /**
+   * Directory basenames to skip during both walks (target + vault-index),
+   * on top of the built-in defaults (dot-dirs, `_archive`, `_skill` — see
+   * cli.ts:walkVaultFiles). Exact basename match, not a glob — a directory
+   * named e.g. `_templates` anywhere in the tree is excluded, matching how
+   * the existing hardcoded defaults already work.
+   */
+  exclude_dirs: string[];
 };
 
 const DEFAULTS = {
   schema_dir: "./_system",
   vault_dir: ".",
   default_type: "",
+  exclude_dirs: [] as string[],
 };
 
 /** Walk up from a start path (file or dir) to the vault root — the nearest
@@ -41,9 +50,14 @@ const CONFIG_PATH = join(
   "config.json",
 );
 
-function loadConfigFile(): Partial<Config> {
+/** `pathOverride` exists for tests: it lets resolveConfig() be exercised
+ * against a real, isolated config.json without touching XDG_CONFIG_HOME or
+ * the operator's actual `~/.config/obsi-validate/config.json` (module-load
+ * timing across parallel test files makes an env-var-only approach flaky —
+ * this is plain dependency injection instead). The CLI never passes it. */
+function loadConfigFile(pathOverride?: string): Partial<Config> {
   try {
-    const raw = readFileSync(CONFIG_PATH, "utf-8");
+    const raw = readFileSync(pathOverride ?? CONFIG_PATH, "utf-8");
     return JSON.parse(raw);
   } catch {
     return {};
@@ -51,8 +65,8 @@ function loadConfigFile(): Partial<Config> {
 }
 
 /** Resolve config: CLI flags > env vars > config file > defaults */
-export function resolveConfig(flags: Partial<Config>): Config {
-  const file = loadConfigFile();
+export function resolveConfig(flags: Partial<Config>, configPathOverride?: string): Config {
+  const file = loadConfigFile(configPathOverride);
 
   const vault_dir =
     flags.vault_dir ??
@@ -74,6 +88,14 @@ export function resolveConfig(flags: Partial<Config>): Config {
     default_type:
       file.default_type ??
       DEFAULTS.default_type,
+    // Additive, not override: config file and --exclude both apply together
+    // (task DoD: "работают ОБА уровня"). A CLI flag layers a one-off
+    // exclusion on top of the persistent config-file list, it does not
+    // replace it.
+    exclude_dirs: [
+      ...(file.exclude_dirs ?? DEFAULTS.exclude_dirs),
+      ...(flags.exclude_dirs ?? []),
+    ],
   };
 }
 

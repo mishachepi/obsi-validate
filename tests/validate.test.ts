@@ -481,6 +481,42 @@ describe("link constraints in property values", () => {
       expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
     });
 
+    test("area-only anchor passes when epic is absent (user ruling 24.08)", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/area-only.md",
+        content: [
+          "---",
+          "type_key: task",
+          "created: 2026-08-23T14:30:12.334+02:00",
+          "created_by:",
+          '  - "[[agent-area-mind]]"',
+          "area:",
+          '  - "[[Mind]]"',
+          "---",
+        ].join("\n"),
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+
+    test("neither epic nor area present still fails, message mentions both", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/anchorless.md",
+        content: [
+          "---",
+          "type_key: task",
+          "created: 2026-08-19T10:15:00.000+02:00",
+          "created_by:",
+          '  - "[[agent-core]]"',
+          "---",
+        ].join("\n"),
+      };
+      const errs = intakeErrors(validateFile(file, schema, opts));
+      expect(errs.map((e) => e.field)).toEqual(["epic"]);
+      expect(errs[0].message).toContain("epic or area");
+    });
+
     test("non-task entities are untouched by the detector", async () => {
       const schema = await loadSchema(
         [

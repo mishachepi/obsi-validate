@@ -269,7 +269,12 @@ function asItems(value: unknown): unknown[] {
  *   (а) `created` must be a full ISO timestamp with time — only
  *       tasknotes:capture stamps that shape;
  *   (б) `created_by` is required, exactly one author link;
- *   (в) `epic` must be non-empty (amendment, user ruling 17.08);
+ *   (в) `epic` OR `area` must be non-empty (amendment, user ruling 17.08;
+ *       area-only override, user ruling 24.08 — "area-only анкор только по
+ *       его слову" from obsi-tasks skill / task-creation.md was documented
+ *       but never enforceable by this detector until now: an unconditional
+ *       epic requirement silently contradicted it. Fix: accept area as an
+ *       equally valid anchor, not just epic);
  * every error directs to the obsi-tasks skill.
  * Grandfathering: tasks created before the cutoff are exempt, and so are
  * tasks with no/unparseable `created` at all — 448 legacy tasks carry no
@@ -318,12 +323,15 @@ export function validateTaskIntake(
     });
   }
 
-  // (в) epic — non-empty
+  // (в) epic OR area — at least one non-empty anchor. Area-only tasks are a
+  // legal path (user ruling 24.08) when there's no natural epic; the
+  // detector only rejects tasks anchored to neither.
   const epic = asItems(data["epic"]);
-  if (epic.length === 0) {
+  const area = asItems(data["area"]);
+  if (epic.length === 0 && area.length === 0) {
     errors.push({
       field: "epic",
-      message: `epic is required for new tasks (no natural epic → ask the user before creating) — ${INTAKE_HINT}`,
+      message: `epic or area is required for new tasks (area-only anchor is legal — no natural epic → ask the user before creating) — ${INTAKE_HINT}`,
       received: data["epic"] ?? null,
     });
   }

@@ -313,6 +313,16 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
     case "emoji":
       return z.string().emoji({ message: "Must be an emoji" });
 
+    case "any":
+      // Explicit escape hatch (user ruling 26.08): a property whose legal
+      // shape genuinely varies by record (e.g. `dod` — string prose most of
+      // the time, occasionally a YAML list) opts out of shape-checking
+      // entirely. Distinct from `default` below: this is deliberate, named,
+      // and documented — the default branch exists for schema authors who
+      // typo'd or forgot a type, and must stay silently permissive for
+      // backward compat, but should never be the thing `any` relies on.
+      return z.unknown();
+
     default:
       return z.unknown();
   }

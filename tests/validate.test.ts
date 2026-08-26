@@ -384,6 +384,55 @@ describe("link constraints in property values", () => {
     });
   });
 
+  // `any` escape hatch (user ruling 26.08, obsi-validate-any-type-escape-hatch):
+  // a property whose legal shape genuinely varies by record (e.g. `dod` —
+  // usually prose, occasionally a YAML checklist) opts out of shape-checking
+  // entirely, instead of `list`'s narrower array-or-scalar tolerance above.
+  describe("any property type — no shape check", () => {
+    const anySchema = () =>
+      loadSchema(
+        [
+          {
+            path: "/v/entities/task_entity.md",
+            content: "---\nentity_name: task\nproperties:\n  dod: {}\n---",
+          },
+        ],
+        [
+          {
+            path: "/v/properties/dod_property.md",
+            content: "---\nproperty_name: dod\nproperty_type: any\n---",
+          },
+        ],
+      );
+
+    test("string value passes", async () => {
+      const schema = await anySchema();
+      const file = {
+        path: "/v/tasks/x.md",
+        content: "---\ntype_key: task\ndod: Some prose describing done-ness\n---",
+      };
+      const result = validateFile(file, schema, { typeKeyField: "type_key" });
+      expect(result.errors.find((e) => e.field === "dod")).toBeUndefined();
+    });
+
+    test("YAML list value passes on the same property", async () => {
+      const schema = await anySchema();
+      const file = {
+        path: "/v/tasks/x.md",
+        content: [
+          "---",
+          "type_key: task",
+          "dod:",
+          "  - step one",
+          "  - step two",
+          "---",
+        ].join("\n"),
+      };
+      const result = validateFile(file, schema, { typeKeyField: "type_key" });
+      expect(result.errors.find((e) => e.field === "dod")).toBeUndefined();
+    });
+  });
+
   describe("task intake detector", () => {
     const taskSchema = () =>
       loadSchema(

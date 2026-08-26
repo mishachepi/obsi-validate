@@ -139,6 +139,7 @@ allowed_values:
 | `links` | Array of wikilinks | link constraints |
 | `list` | Array of any values | |
 | `emoji` | Single emoji character | |
+| `any` | No shape check — string, list, mapping, scalar all pass | escape hatch for properties whose legal shape genuinely varies by record (e.g. `dod`: usually prose, occasionally a checklist) |
 
 ---
 

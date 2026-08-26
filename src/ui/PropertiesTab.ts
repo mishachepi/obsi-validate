@@ -34,6 +34,7 @@ const PROPERTY_TYPES = [
   "links",
   "list",
   "emoji",
+  "any",
 ];
 
 export async function renderPropertiesTab(

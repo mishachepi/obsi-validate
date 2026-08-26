@@ -92,7 +92,10 @@ describe("validateFile", () => {
     expect(result.warnings[0].message).toContain("Missing type_key");
   });
 
-  test("unknown entity type warns", async () => {
+  // Error, not warning (user/core ruling 2026-07-20): a typo'd or undeclared
+  // type_key must block every call site (manual CLI included), not just the
+  // PostToolUse hook's own separate warning-text detection.
+  test("unknown entity type is an error, invalid=true", async () => {
     const schema = await getSchema();
     const file = {
       path: "unknown.md",
@@ -100,7 +103,10 @@ describe("validateFile", () => {
     };
 
     const result = validateFile(file, schema, opts);
-    expect(result.warnings[0].message).toContain("Unknown entity type");
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].field).toBe("type_key");
+    expect(result.errors[0].message).toContain("Unknown entity type");
+    expect(result.warnings).toHaveLength(0);
   });
 
   test("missing required field produces error", async () => {

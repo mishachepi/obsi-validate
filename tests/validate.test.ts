@@ -7,7 +7,7 @@ import {
   validateFiles,
 } from "../src/validate.js";
 import type { VaultIndex } from "../src/types.js";
-import { indexKeysFor, isLinkableFile } from "../src/link-index.js";
+import { indexKeysFor, isLinkableFile, aliasKeysFor } from "../src/link-index.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 async function getSchema() {
@@ -481,6 +481,42 @@ describe("link constraints in property values", () => {
       expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
     });
 
+    test("area-only anchor passes when epic is absent (user ruling 24.08)", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/area-only.md",
+        content: [
+          "---",
+          "type_key: task",
+          "created: 2026-08-23T14:30:12.334+02:00",
+          "created_by:",
+          '  - "[[agent-area-mind]]"',
+          "area:",
+          '  - "[[Mind]]"',
+          "---",
+        ].join("\n"),
+      };
+      expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
+    });
+
+    test("neither epic nor area present still fails, message mentions both", async () => {
+      const schema = await taskSchema();
+      const file = {
+        path: "/v/tasks/anchorless.md",
+        content: [
+          "---",
+          "type_key: task",
+          "created: 2026-08-19T10:15:00.000+02:00",
+          "created_by:",
+          '  - "[[agent-core]]"',
+          "---",
+        ].join("\n"),
+      };
+      const errs = intakeErrors(validateFile(file, schema, opts));
+      expect(errs.map((e) => e.field)).toEqual(["epic"]);
+      expect(errs[0].message).toContain("epic or area");
+    });
+
     test("non-task entities are untouched by the detector", async () => {
       const schema = await loadSchema(
         [
@@ -795,6 +831,86 @@ describe("wikilink resolution against a path-keyed index", () => {
     // …while each full path still resolves to its own file
     expect(index.get("a/Dup")!.path).toBe("a/Dup.md");
     expect(index.get("b/Dup")!.path).toBe("b/Dup.md");
+  });
+});
+
+describe("aliasKeysFor — frontmatter alias extraction", () => {
+  test("list form yields every alias, trimmed", () => {
+    expect(aliasKeysFor({ aliases: [" Foo", "Bar "] })).toEqual(["Foo", "Bar"]);
+  });
+
+  test("scalar form is a one-item list (mirrors vault-wide list/scalar tolerance)", () => {
+    expect(aliasKeysFor({ aliases: "Solo" })).toEqual(["Solo"]);
+  });
+
+  test("no aliases field yields no keys", () => {
+    expect(aliasKeysFor({})).toEqual([]);
+    expect(aliasKeysFor(undefined)).toEqual([]);
+  });
+
+  test("null/empty entries are dropped, not turned into a phantom link", () => {
+    expect(aliasKeysFor({ aliases: [" ", "", "Real"] })).toEqual(["Real"]);
+  });
+
+  test("non-string alias values coerce instead of throwing", () => {
+    expect(aliasKeysFor({ aliases: [2026] })).toEqual(["2026"]);
+  });
+});
+
+describe("wikilink resolution — alias-aware index", () => {
+  /** Index built the way the CLI builds it post-fix: filename keys first,
+   * then a second pass fills alias keys without shadowing real names. */
+  function indexWithAliases(
+    files: Array<{ path: string; aliases?: unknown }>,
+  ): VaultIndex {
+    const index: VaultIndex = new Map();
+    const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
+    for (const f of files) {
+      const data = f.aliases === undefined ? {} : { aliases: f.aliases };
+      const entry = { path: f.path, data };
+      entries.push(entry);
+      const { strong, weak } = indexKeysFor(f.path);
+      for (const k of strong) index.set(k, entry);
+      for (const k of weak) if (!index.has(k)) index.set(k, entry);
+    }
+    for (const entry of entries) {
+      for (const alias of aliasKeysFor(entry.data)) {
+        if (!index.has(alias)) index.set(alias, entry);
+      }
+    }
+    return index;
+  }
+
+  const body = (link: string) => `---\ntype_key: page\n---\n\nsee ${link}\n`;
+
+  test("a link naming the alias resolves, not just the filename", () => {
+    const index = indexWithAliases([
+      { path: "_core/years/YEAR 2026.md", aliases: ["2026", "Year 2026"] },
+    ]);
+    expect(validateBodyLinks(body("[[2026]]"), index)).toHaveLength(0);
+    expect(validateBodyLinks(body("[[Year 2026]]"), index)).toHaveLength(0);
+    // the real filename still resolves too — alias is additive, not a replacement
+    expect(validateBodyLinks(body("[[YEAR 2026]]"), index)).toHaveLength(0);
+  });
+
+  test("scalar aliases field resolves the same as a list", () => {
+    const index = indexWithAliases([{ path: "cmdb/persons/Sveta Efimova.md", aliases: "Света" }]);
+    expect(validateBodyLinks(body("[[Света]]"), index)).toHaveLength(0);
+  });
+
+  test("a real note's own name always wins over another note's alias", () => {
+    // Dup.md is a real file; Alias.md merely claims "Dup" as an alias.
+    const index = indexWithAliases([
+      { path: "b/Dup.md" },
+      { path: "a/Alias.md", aliases: "Dup" },
+    ]);
+    expect(index.get("Dup")!.path).toBe("b/Dup.md");
+  });
+
+  test("an alias that matches nothing still errors — not a blanket pass", () => {
+    const index = indexWithAliases([{ path: "Note.md", aliases: "SomethingElse" }]);
+    const errors = validateBodyLinks(body("[[NotAnAlias]]"), index);
+    expect(errors).toHaveLength(1);
   });
 });
 

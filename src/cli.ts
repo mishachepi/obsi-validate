@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 import { program } from "commander";
-import { readdir, readFile, stat } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { join, relative } from "path";
 import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
-import { indexKeysFor, isLinkableFile } from "./link-index.js";
+import { indexKeysFor, aliasKeysFor } from "./link-index.js";
+import { walkMdFiles, walkLinkableFiles } from "./walk.js";
 import type {
   RawFile,
   ValidateOptions,
@@ -14,53 +15,6 @@ import type {
   ValidationResult,
   ValidationSummary,
 } from "./types.js";
-
-/** Walk directory recursively, skipping dot-directories.
- *
- * `mode` separates two different questions that must not share exclusions:
- *   "targets" — files to validate. `_index.md` is excluded deliberately.
- *   "index"   — files a wikilink may point AT. Excluding a real file here
- *               turns a valid link into a false "not found", so this mode
- *               keeps `_index.md` and also collects `.canvas` notes, which
- *               Obsidian links to like any other note.
- */
-async function walkVaultFiles(dir: string, mode: "targets" | "index"): Promise<string[]> {
-  const paths: string[] = [];
-
-  async function walk(d: string) {
-    const entries = await readdir(d, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue;
-      // Skip archive / shadow-override trees: their duplicate-basename notes
-      // would shadow canonical notes in the link index (first-wins).
-      if (entry.isDirectory() && (entry.name === "_archive" || entry.name === "_skill")) continue;
-      const fullPath = join(d, entry.name);
-      if (entry.isDirectory()) {
-        await walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (mode === "targets") {
-        if (entry.name.endsWith(".md") && entry.name !== "_index.md") paths.push(fullPath);
-      } else if (isLinkableFile(entry.name)) {
-        paths.push(fullPath);
-      }
-    }
-  }
-
-  await walk(dir);
-  return paths;
-}
-
-/** Files to validate. */
-async function walkMdFiles(dir: string): Promise<string[]> {
-  return walkVaultFiles(dir, "targets");
-}
-
-/** Files a wikilink may resolve to. */
-async function walkLinkableFiles(dir: string): Promise<string[]> {
-  return walkVaultFiles(dir, "index");
-}
 
 /** Read all .md files into memory (for schema — small number of files) */
 async function readMdFiles(dir: string): Promise<RawFile[]> {
@@ -159,14 +113,22 @@ program
   .option("-t, --type <entity>", "filter by entity type")
   .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
   .option("--check-links", "validate body wikilinks and inline properties")
+  .option(
+    "--exclude <dir>",
+    "directory basename to skip in both walks (repeatable); additive with config exclude_dirs",
+    (val: string, prev: string[]) => prev.concat([val]),
+    [] as string[],
+  )
   .action(async (path, options) => {
    try {
     const config = resolveConfig({
       schema_dir: options.schemaDir,
       vault_dir: path ?? options.vaultDir,
+      exclude_dirs: options.exclude,
     });
     const schemaDir = config.schema_dir;
     const vaultDir = config.vault_dir;
+    const excludeDirs: ReadonlySet<string> = new Set(config.exclude_dirs);
 
     // Load schema (small — ~120 files, bulk read is fine)
     const [entityFiles, propertyFiles] = await Promise.all([
@@ -199,8 +161,9 @@ program
       // (Previously, validating a directory indexed only that dir → every link to a
       //  note outside it, e.g. all Areas from _core, was a false "not found".)
       const vaultRoot = options.vaultDir ?? vaultDir;
-      const allPaths = await walkLinkableFiles(vaultRoot);
+      const allPaths = await walkLinkableFiles(vaultRoot, excludeDirs);
       const vaultIndex: VaultIndex = new Map();
+      const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
       for (const p of allPaths) {
         const isCanvas = p.endsWith(".canvas");
         let data: Record<string, unknown> = {};
@@ -211,15 +174,24 @@ program
           } catch {}
         }
         const entry = { path: p, data };
+        entries.push(entry);
         const { strong, weak } = indexKeysFor(relative(vaultRoot, p));
         for (const key of strong) vaultIndex.set(key, entry);
         for (const key of weak) if (!vaultIndex.has(key)) vaultIndex.set(key, entry);
+      }
+      // Second pass: alias keys fill gaps only. Every file's own path/basename
+      // is already registered above, so a note can never be shadowed by
+      // another note's alias — only genuinely unclaimed names resolve.
+      for (const entry of entries) {
+        for (const alias of aliasKeysFor(entry.data)) {
+          if (!vaultIndex.has(alias)) vaultIndex.set(alias, entry);
+        }
       }
       validateOpts.vaultIndex = vaultIndex;
     }
     const targetPaths = targetStat.isFile()
       ? [vaultDir]
-      : await walkMdFiles(vaultDir);
+      : await walkMdFiles(vaultDir, excludeDirs);
     const summary = await validateStreaming(targetPaths, schema, options.type, validateOpts);
 
     // Output

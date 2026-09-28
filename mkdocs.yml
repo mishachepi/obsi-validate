@@ -34,6 +34,7 @@ nav:
   - Schema reference: schema-reference.md
   - CLI: cli.md
   - Architecture: architecture.md
+  - mdbase engine: mdbase-spike.md
 
 markdown_extensions:
   - tables

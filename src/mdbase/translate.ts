@@ -54,9 +54,7 @@ export function propertyToJsonSchema(prop: ResolvedProperty): JsonSchema {
     case "date":
     case "datetime":
     case "link":
-    case "wikilink":
     case "emoji":
-    case "marker":
       out = { type: "string" };
       break;
     case "number": {
@@ -83,11 +81,12 @@ export function propertyToJsonSchema(prop: ResolvedProperty): JsonSchema {
       out = { type: ["string", "array"], items: { type: "string" } };
       break;
     case "list":
-    case "array":
       out = listTolerant();
       break;
     default:
-      // any / object / map / unknown — permissive on both engines.
+      // any / object / map / array / wikilink / marker / unknown — the Zod side
+      // has no case for these and falls through to z.unknown(); mirror that
+      // exactly rather than "improving" it here (parity first).
       out = {};
   }
 

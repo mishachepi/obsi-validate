@@ -149,6 +149,7 @@ program
   .option("-t, --type <entity>", "filter by entity type")
   .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
   .option("--check-links", "validate body wikilinks and inline properties")
+  .option("--engine <name>", "shape-validation engine: zod | mdbase", "zod")
   .option(
     "--exclude <dir>",
     "directory basename to skip in both walks (repeatable); additive with config exclude_dirs",
@@ -181,6 +182,13 @@ program
       defaultEntityType: config.default_type || undefined,
       checkLinks: options.checkLinks ?? false,
     };
+    if (options.engine === "mdbase") {
+      // Loaded on demand: keeps mdbase out of the default path and the plugin bundle.
+      const { mdbaseShapeEngine } = await import("./mdbase/adapter.js");
+      validateOpts.shapeEngine = mdbaseShapeEngine(schema, typeKeyField);
+    } else if (options.engine !== "zod") {
+      throw new Error(`unknown --engine "${options.engine}" (expected zod | mdbase)`);
+    }
 
     // Single file or directory
     const targetStat = await stat(vaultDir);

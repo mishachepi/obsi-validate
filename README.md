@@ -18,7 +18,7 @@ Obsidian plugin that validates vault frontmatter against schemas defined in the 
 
 ```bash
 git clone <repo-url> && cd property-validator
-npm install && npm run build
+bun install && bun run build
 ```
 
 Copy `main.js`, `manifest.json`, `styles.css` to `.obsidian/plugins/property-validator/` in your vault.
@@ -28,7 +28,7 @@ Copy `main.js`, `manifest.json`, `styles.css` to `.obsidian/plugins/property-val
 Also works as a standalone CLI:
 
 ```bash
-npm run build:cli && bun link
+bun run build:cli && bun link
 obsi-validate --vault-dir /path/to/vault
 ```
 

@@ -5,7 +5,7 @@
 1. Build the plugin:
 
     ```bash
-    npm install && npm run build
+    bun install && bun run build
     ```
 
 2. Copy to your vault:

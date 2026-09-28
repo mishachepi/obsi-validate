@@ -5,8 +5,8 @@ Property Validator includes a standalone CLI tool that runs the same validation 
 ## Installation
 
 ```bash
-npm install
-npm run build:cli    # builds to dist/cli.js
+bun install
+bun run build:cli    # builds to dist/cli.js
 bun link             # makes obsi-validate available globally
 ```
 

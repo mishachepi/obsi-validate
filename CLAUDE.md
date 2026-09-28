@@ -7,13 +7,13 @@
 ## Build & Development
 
 ```bash
-npm install                          # install dependencies
-npm run dev                          # build plugin with watch mode
-npm run build                        # production build (type-check + minified)
+bun install                          # install dependencies
+bun run dev                          # build plugin with watch mode
+bun run build                        # production build (type-check + minified)
 bun test                             # run all tests
 bun test tests/schema.test.ts        # run single test file
 bun run src/cli.ts --vault-dir <path> # run CLI in dev
-npm run build:cli                    # build CLI dist/ (cli.js + index.js)
+bun run build:cli                    # build CLI dist/ (cli.js + index.js)
 ```
 
 ## Architecture

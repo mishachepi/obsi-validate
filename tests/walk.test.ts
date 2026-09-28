@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { walkMdFiles, walkLinkableFiles } from "../src/walk.js";
+import { walkMdFiles, walkLinkableFiles, walkSchemaFiles } from "../src/walk.js";
 
 /** Build a small on-disk tree under a fresh temp dir. `files` are
  * vault-relative paths; each gets minimal content so it's a real .md. */
@@ -38,6 +38,29 @@ describe("walkVaultFiles — fixed defaults (always on)", () => {
     const root = await tree(["_archive/Old.md", "_skill/Prompt.md", "Real.md"]);
     const paths = await walkMdFiles(root);
     expect(paths.map((p) => p.replace(root + "/", ""))).toEqual(["Real.md"]);
+  });
+});
+
+describe("walkSchemaFiles — `_deprecated/` parity with the plugin", () => {
+  test("schema walk skips _deprecated/ (plugin Archive folder), keeps nested groups", async () => {
+    const root = await tree([
+      "task_entity.md",
+      "structure/area_entity.md",
+      "_deprecated/old_entity.md",
+      "structure/_deprecated/older_entity.md",
+    ]);
+    const paths = await walkSchemaFiles(root);
+    expect(paths.map((p) => p.replace(root + "/", "")).sort()).toEqual(
+      ["structure/area_entity.md", "task_entity.md"].sort(),
+    );
+  });
+
+  test("vault walk (validation targets) is unaffected — notes under _deprecated/ still validate", async () => {
+    const root = await tree(["_deprecated/note.md", "Real.md"]);
+    const paths = await walkMdFiles(root);
+    expect(paths.map((p) => p.replace(root + "/", "")).sort()).toEqual(
+      ["_deprecated/note.md", "Real.md"].sort(),
+    );
   });
 });
 

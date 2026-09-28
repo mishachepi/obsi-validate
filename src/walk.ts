@@ -59,6 +59,19 @@ export async function walkMdFiles(dir: string, excludeDirs?: ReadonlySet<string>
   return walkVaultFiles(dir, "targets", excludeDirs);
 }
 
+/** Directories skipped when loading SCHEMA files (entities / properties).
+ * `_deprecated/` is where the plugin's Archive action parks retired
+ * definitions; the plugin never loads it (bridge.ts `collectMdFiles`), so the
+ * CLI must not either — otherwise a retired type keeps validating in hooks
+ * and CI. This applies only to schema discovery: notes living under a
+ * `_deprecated/` folder are still ordinary vault files for validation. */
+const SCHEMA_EXCLUDES: ReadonlySet<string> = new Set(["_deprecated"]);
+
+/** Schema definition files under an entities/ or properties/ dir. */
+export async function walkSchemaFiles(dir: string): Promise<string[]> {
+  return walkVaultFiles(dir, "targets", SCHEMA_EXCLUDES);
+}
+
 /** Files a wikilink may resolve to. */
 export async function walkLinkableFiles(dir: string, excludeDirs?: ReadonlySet<string>): Promise<string[]> {
   return walkVaultFiles(dir, "index", excludeDirs);

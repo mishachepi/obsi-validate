@@ -18,23 +18,19 @@ Schema is defined in two types of files stored in your vault:
     task_entity.md
     structure/           # subdirectories for UI grouping
       area_entity.md
-    _deprecated/         # archived — hidden from the plugin UI, but see the warning below
+    _deprecated/         # archived — not loaded as schema (plugin and CLI alike)
   properties/
     status_property.md
     priority_property.md
     _deprecated/
 ```
 
-!!! warning "`_deprecated/` is not honoured by the CLI"
-    The plugin skips `_deprecated/` when loading schema (`src/bridge.ts`), but the CLI
-    walker excludes only `_archive` and `_skill` (`src/cli.ts`). An entity moved to
-    `_deprecated/` therefore **still validates** under `obsi-validate`, and so under any
-    CI job or editor hook built on it.
-
-    Verified 2026-07-30: an entity placed in `entities/_deprecated/` resolved normally,
-    while an undefined type in the same run produced `Unknown entity type`.
-
-    To retire a type for both, move the file out of `{schema_dir}` entirely.
+`_deprecated/` (any depth under `entities/` or `properties/`) is where the plugin's
+**Archive** action parks retired definitions. Neither the plugin (`src/bridge.ts`) nor the
+CLI (`src/walk.ts` `walkSchemaFiles`) loads it, so an archived type produces
+`Unknown entity type` everywhere — in the UI, in hooks and in CI. The exclusion applies to
+schema discovery only: notes that happen to live in a `_deprecated/` folder elsewhere in
+the vault are still validated as ordinary files.
 
 ---
 

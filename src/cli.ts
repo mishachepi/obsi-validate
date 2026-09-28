@@ -6,7 +6,7 @@ import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { resolveConfig } from "./config.js";
 import { indexKeysFor, aliasKeysFor } from "./link-index.js";
-import { walkMdFiles, walkLinkableFiles } from "./walk.js";
+import { walkMdFiles, walkLinkableFiles, walkSchemaFiles } from "./walk.js";
 import type {
   RawFile,
   ValidateOptions,
@@ -16,9 +16,9 @@ import type {
   ValidationSummary,
 } from "./types.js";
 
-/** Read all .md files into memory (for schema — small number of files) */
+/** Read all schema .md files into memory (small number of files; skips `_deprecated/`) */
 async function readMdFiles(dir: string): Promise<RawFile[]> {
-  const paths = await walkMdFiles(dir);
+  const paths = await walkSchemaFiles(dir);
   const files: RawFile[] = [];
   for (const path of paths) {
     files.push({ path, content: await readFile(path, "utf-8") });

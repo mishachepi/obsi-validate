@@ -73,7 +73,7 @@ describe("entityToTypeDef — entity shape", () => {
     const a = JSON.stringify(translateSchema(s, "type_key"));
     const b = JSON.stringify(translateSchema(s, "type_key"));
     expect(a).toBe(b);
-    expect(translateSchema(s, "type_key").types.map((t) => t.name)).toEqual(["base", "page", "task"]);
+    expect(translateSchema(s, "type_key").types.map((t) => t.name)).toEqual(["base", "note", "page", "task"]);
   });
 });
 
@@ -105,11 +105,11 @@ describe("exportMdbase — files on disk", () => {
     const out = await mkdtemp(join(tmpdir(), "obsi-mdbase-"));
     dirs.push(out);
     const first = await exportMdbase(s, "type_key", out);
-    expect(first.sort()).toEqual(["_types/base.md", "_types/page.md", "_types/task.md", "mdbase.yaml"].sort());
+    expect(first.sort()).toEqual(["_types/base.md", "_types/note.md", "_types/page.md", "_types/task.md", "mdbase.yaml"].sort());
     const snapshot = Object.fromEntries(await Promise.all(first.map(async (f) => [f, await readFile(join(out, f), "utf-8")])));
     await exportMdbase(s, "type_key", out);
     for (const f of first) expect(await readFile(join(out, f), "utf-8")).toBe(snapshot[f]);
-    expect((await readdir(join(out, "_types"))).length).toBe(3);
+    expect((await readdir(join(out, "_types"))).length).toBe(4);
 
     const yaml = snapshot["mdbase.yaml"];
     expect(yaml.startsWith("spec_version:")).toBe(true);

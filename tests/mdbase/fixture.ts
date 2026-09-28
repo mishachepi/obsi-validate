@@ -23,6 +23,7 @@ export function fixtureSchema() {
         "---\nentity_name: task\nextends: base\nproperty_patterns: ['^time_[a-z]+$']\nproperties:\n  status: {required: true}\n  priority: {}\n  estimate: {}\n  epic: {}\n  created: {required: true}\n  done: {}\n  dod:\n    required_unless:\n      status: [Closed, Rejected]\n---\n",
     },
     { path: "entities/page_entity.md", content: "---\nentity_name: page\nextends: base\nallow_extra: true\nproperties:\n  time_budget: {}\n  unknown_prop: {}\n---\n" },
+    { path: "entities/note_entity.md", content: "---\nentity_name: note\nextends: base\nexpected_folder: notes/\nproperties:\n  status: {}\n---\n" },
   ];
   return loadSchema(entities, props);
 }

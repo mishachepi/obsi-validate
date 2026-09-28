@@ -86,3 +86,43 @@ an `unknown_type` error, matching our "unknown type_key is an error" rule.
    validation, no `Collection`/sql.js). That single change flips the plugin verdict.
 3. Do **not** open a full `_system/**` migration: with the compile-step there is nothing to
    migrate — the notes already are the schema.
+
+## Rollout — one script for every machine (M1 / M4 / M5)
+
+The vault hook (`_claude/scripts/validate-hook.sh`) runs the **global** `obsi-validate`, which is
+a symlink into this repo's `dist/cli.js`; the Obsidian plugin (`property-validator`) is a symlink
+to this repo's `main.js`. Neither artifact is in git, so every machine rebuilds after pulling.
+Requirements: `git` with access to `origin`, `bun` ≥ 1.3, `node` ≥ 20 (plugin build), `jq` (hook).
+
+```bash
+set -euo pipefail
+REPO="${REPO:-$HOME/SNV/obsi-pydantic}"
+VAULT="${VAULT_HOME:-/Volumes/mch}"                   # M5: /Users/mch
+
+# 1. code
+[ -d "$REPO/.git" ] || git clone git@github.com:mishachepi/obsi-validate.git "$REPO"
+git -C "$REPO" checkout main && git -C "$REPO" pull --ff-only origin main
+
+# 2. deps + tests + both bundles
+cd "$REPO" && bun install --frozen-lockfile && bun test && bun run build:cli && bun run build
+
+# 3. global CLI (idempotent; creates ~/.bun/bin/obsi-validate → $REPO/dist/cli.js)
+bun link >/dev/null
+command -v obsi-validate >/dev/null || echo "add ~/.bun/bin to PATH"
+
+# 4. plugin symlinks into the vault (idempotent)
+P="$VAULT/.obsidian/plugins/property-validator"; mkdir -p "$P"
+for f in main.js manifest.json styles.css; do ln -sfn "$REPO/$f" "$P/$f"; done
+
+# 5. verify
+obsi-validate --help | grep -q -- '--engine'                              # new CLI is live
+obsi-validate "$VAULT/_system/entities/structure/task_entity.md" \
+  --vault-dir "$VAULT" --schema-dir "$VAULT/_system" -f json | grep -q '"invalid": 0'
+obsi-validate "$VAULT/_system/entities/structure/task_entity.md" --engine mdbase \
+  --vault-dir "$VAULT" --schema-dir "$VAULT/_system" -f json | grep -q '"invalid": 0'
+echo "OK: obsi-validate $(git -C "$REPO" rev-parse --short HEAD) on $(hostname)"
+```
+
+Afterwards: reload the plugin in Obsidian (Settings → Community plugins → toggle
+`property-validator`) — Obsidian caches the old `main.js` until then. The hook needs nothing:
+it resolves the binary per call.

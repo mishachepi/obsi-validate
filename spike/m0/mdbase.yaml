@@ -1,0 +1,7 @@
+spec_version: "0.3.0"
+name: obsi-validate-m0
+settings:
+  types_folder: "_types"
+  validation: "error"
+  explicit_type_keys: [type_key]
+  include_subfolders: true

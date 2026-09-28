@@ -103,6 +103,42 @@ function formatPretty(summary: ValidationSummary, baseDir: string): string {
   return lines.join("\n");
 }
 
+/** Load the two-tier schema (entities/ + properties/) from a schema dir. */
+async function loadSchemaFromDir(schemaDir: string): Promise<VaultSchema> {
+  const [entityFiles, propertyFiles] = await Promise.all([
+    readMdFiles(join(schemaDir, "entities")),
+    readMdFiles(join(schemaDir, "properties")),
+  ]);
+  return loadSchema(entityFiles, propertyFiles);
+}
+
+program
+  .command("mdbase-export")
+  .description("generate mdbase.yaml + _types/*.md (JSON Schema 2020-12) from the entity/property notes")
+  .option("--schema-dir <path>", "path to schema files")
+  .option("--out <dir>", "output directory (default: a fresh temp dir)")
+  .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
+  .action(async (options) => {
+    try {
+      const { exportMdbase } = await import("./mdbase/translate.js");
+      const { mkdtemp } = await import("fs/promises");
+      const { tmpdir } = await import("os");
+      // Commander recognises root options (--schema-dir, --type-key-field) even when
+      // they follow the subcommand name, so they land on program.opts(), not here.
+      const root = program.opts();
+      const config = resolveConfig({ schema_dir: options.schemaDir ?? root.schemaDir });
+      const schema = await loadSchemaFromDir(config.schema_dir);
+      const typeKeyField =
+        options.typeKeyField ?? root.typeKeyField ?? config.type_key_field ?? detectTypeKeyField(schema) ?? "entity";
+      const outDir = options.out ?? (await mkdtemp(join(tmpdir(), "obsi-validate-mdbase-")));
+      const written = await exportMdbase(schema, typeKeyField, outDir);
+      console.log(`${outDir}\n  ${written.length} files (${written.length - 1} types, type key: ${typeKeyField})`);
+    } catch (err) {
+      console.error(`obsi-validate: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
 program
   .name("obsi-validate")
   .description("Validate Obsidian vault frontmatter against schema")
@@ -113,6 +149,7 @@ program
   .option("-t, --type <entity>", "filter by entity type")
   .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
   .option("--check-links", "validate body wikilinks and inline properties")
+  .option("--engine <name>", "shape-validation engine: zod | mdbase", "zod")
   .option(
     "--exclude <dir>",
     "directory basename to skip in both walks (repeatable); additive with config exclude_dirs",
@@ -131,11 +168,7 @@ program
     const excludeDirs: ReadonlySet<string> = new Set(config.exclude_dirs);
 
     // Load schema (small — ~120 files, bulk read is fine)
-    const [entityFiles, propertyFiles] = await Promise.all([
-      readMdFiles(join(schemaDir, "entities")),
-      readMdFiles(join(schemaDir, "properties")),
-    ]);
-    const schema = loadSchema(entityFiles, propertyFiles);
+    const schema = await loadSchemaFromDir(schemaDir);
 
     // Resolve type_key field: CLI flag > config > schema auto-detect > "entity" fallback
     const typeKeyField =
@@ -149,6 +182,13 @@ program
       defaultEntityType: config.default_type || undefined,
       checkLinks: options.checkLinks ?? false,
     };
+    if (options.engine === "mdbase") {
+      // Loaded on demand: keeps mdbase out of the default path and the plugin bundle.
+      const { mdbaseShapeEngine } = await import("./mdbase/adapter.js");
+      validateOpts.shapeEngine = mdbaseShapeEngine(schema, typeKeyField);
+    } else if (options.engine !== "zod") {
+      throw new Error(`unknown --engine "${options.engine}" (expected zod | mdbase)`);
+    }
 
     // Single file or directory
     const targetStat = await stat(vaultDir);

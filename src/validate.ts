@@ -9,6 +9,7 @@ import type {
   ValidationSummary,
   ValidationError,
   ResolvedProperty,
+  ShapeEngine,
 } from "./types.js";
 import { DEFAULT_ENTITY_FIELD, TASK_INTAKE_CUTOFF } from "./constants.js";
 
@@ -122,45 +123,18 @@ export function validateFile(
     });
   }
 
-  const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
-  const allowExtra = schema.allowExtraMap.get(entityType) ?? false;
-  const propertyPatterns = schema.propertyPatternMap?.get(entityType) ?? [];
+  // Shape half — pluggable engine (Zod by default, mdbase via options)
+  const shape = (options?.shapeEngine ?? zodShapeEngine)(data, entityType, schema, typeKeyField);
+  errors.push(...shape.errors);
+  warnings.push(...shape.warnings);
 
-  // Check each frontmatter field
+  // Bespoke per-field rules — identical on every engine
+  const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
   for (const [field, value] of Object.entries(data)) {
     if (field === typeKeyField) continue;
-
     const prop = propByName.get(field);
-
-    if (!prop) {
-      // Order matters: exact name → declared key family → entity-wide escape.
-      // Patterns sit here so a generated key (time_<area>, <cat>_hours) is
-      // accepted without switching the whole entity to allow_extra, which would
-      // stop catching genuinely unknown fields — the thing this check is for.
-      const matchesFamily = propertyPatterns.some((re) => re.test(field));
-      if (!matchesFamily && !allowExtra) {
-        warnings.push({ field, message: "Unknown property for this entity" });
-      }
-      continue;
-    }
-
-    // No property file → no validator → skip value validation (field is still recognized)
-    if (!prop.validator) continue;
-
-    // Nullable properties accept null/undefined/empty string
+    if (!prop || !prop.validator) continue;
     if (prop.nullable && (value === null || value === undefined || value === "")) continue;
-
-    const result = prop.validator.safeParse(value);
-    if (!result.success) {
-      for (const issue of result.error.issues) {
-        errors.push({
-          field,
-          message: issue.message,
-          expected: prop.property_type,
-          received: value,
-        });
-      }
-    }
 
     // Custom post-validator (JS expression from vault YAML, receives `value`)
     // This is intentionally user-defined code from the vault owner's own schema files.
@@ -208,17 +182,6 @@ export function validateFile(
     }
   }
 
-  // Check required fields
-  for (const prop of resolvedProps) {
-    if (isExemptFromRequired(prop, data)) continue;
-    if (prop.required && !(prop.name in data)) {
-      errors.push({
-        field: prop.name,
-        message: "Required field is missing",
-      });
-    }
-  }
-
   // Task-intake detector: new tasks must follow the obsi-tasks creation canon
   if (entityType === "task") {
     errors.push(...validateTaskIntake(file.content, data));
@@ -247,6 +210,55 @@ export function validateFile(
     warnings,
   };
 }
+
+/** Default shape engine: per-property Zod validators from schema.ts. */
+export const zodShapeEngine: ShapeEngine = (data, entityType, schema, typeKeyField) => {
+  const errors: ValidationError[] = [];
+  const warnings: ValidationError[] = [];
+  const resolvedProps = schema.entityMap.get(entityType) ?? [];
+  const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
+  const allowExtra = schema.allowExtraMap.get(entityType) ?? false;
+  const propertyPatterns = schema.propertyPatternMap?.get(entityType) ?? [];
+
+  for (const [field, value] of Object.entries(data)) {
+    if (field === typeKeyField) continue;
+    const prop = propByName.get(field);
+
+    if (!prop) {
+      // Order matters: exact name → declared key family → entity-wide escape.
+      // Patterns sit here so a generated key (time_<area>, <cat>_hours) is
+      // accepted without switching the whole entity to allow_extra, which would
+      // stop catching genuinely unknown fields — the thing this check is for.
+      const matchesFamily = propertyPatterns.some((re) => re.test(field));
+      if (!matchesFamily && !allowExtra) {
+        warnings.push({ field, message: "Unknown property for this entity" });
+      }
+      continue;
+    }
+
+    // No property file → no validator → skip value validation (field is still recognized)
+    if (!prop.validator) continue;
+
+    // Nullable properties accept null/undefined/empty string
+    if (prop.nullable && (value === null || value === undefined || value === "")) continue;
+
+    const result = prop.validator.safeParse(value);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        errors.push({ field, message: issue.message, expected: prop.property_type, received: value });
+      }
+    }
+  }
+
+  for (const prop of resolvedProps) {
+    if (isExemptFromRequired(prop, data)) continue;
+    if (prop.required && !(prop.name in data)) {
+      errors.push({ field: prop.name, message: "Required field is missing" });
+    }
+  }
+
+  return { errors, warnings };
+};
 
 const INTAKE_HINT =
   "new tasks are created only via the obsi-tasks skill (tasknotes:capture + fm set), see _claude/skills/obsi-tasks";

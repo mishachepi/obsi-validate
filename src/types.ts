@@ -157,8 +157,24 @@ export type ValidationSummary = {
 /** Map of normalized note name → its frontmatter data, for link validation */
 export type VaultIndex = Map<string, { path: string; data: Record<string, unknown> }>;
 
+/**
+ * The "shape" half of validation: field types, enum/range, unknown fields,
+ * required / required_unless. Everything else in validateFile (expected_folder,
+ * custom_validator, link_constraints, task-intake, body links) is bespoke and
+ * runs identically regardless of engine. Default engine: Zod (schema.ts);
+ * alternative: mdbase JSON Schema (src/mdbase/adapter.ts).
+ */
+export type ShapeEngine = (
+  data: Record<string, unknown>,
+  entityType: string,
+  schema: VaultSchema,
+  typeKeyField: string,
+) => { errors: ValidationError[]; warnings: ValidationError[] };
+
 /** Options for validation */
 export type ValidateOptions = {
+  /** Engine for the shape half of validation (default: Zod) */
+  shapeEngine?: ShapeEngine;
   /** Frontmatter field name that identifies entity type (default: "entity") */
   typeKeyField?: string;
   /** Default entity type if typeKeyField is missing (empty = skip file) */

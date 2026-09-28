@@ -24,6 +24,12 @@ obsi-validate --vault-dir /path/to/vault -t task
 
 # JSON output
 obsi-validate --vault-dir /path/to/vault -f json
+
+# Same run, shape-checked by mdbase (JSON Schema) instead of Zod
+obsi-validate --vault-dir /path/to/vault --engine mdbase
+
+# Compile the vault schema to an mdbase collection (mdbase.yaml + _types/*.md)
+obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
 ```
 
 ## Options
@@ -37,9 +43,22 @@ obsi-validate --vault-dir /path/to/vault -f json
 | `-t, --type <entity>` | Filter results by entity type | all |
 | `--check-links` | Also validate body wikilinks and inline properties | off |
 | `--type-key-field <name>` | Frontmatter field identifying the entity type | auto-detected from schema, falls back to `entity` |
+| `--engine <name>` | Shape engine: `zod` or `mdbase` (JSON Schema via `@callumalpass/mdbase`). Bespoke rules (link constraints, expected folder, task intake, body links) run identically on both | `zod` |
 
 Body wikilinks are **not** checked unless you pass `--check-links`. A run without it
 says nothing about broken links.
+
+## `mdbase-export`
+
+```bash
+obsi-validate mdbase-export [--schema-dir <path>] [--out <dir>] [--type-key-field <name>]
+```
+
+Compiles the entity/property notes into an [mdbase](https://mdbase.dev/) collection:
+`mdbase.yaml` plus one `_types/<entity>.md` per entity, each carrying the entity's resolved
+properties as JSON Schema 2020-12. Output is deterministic and idempotent; the notes stay the
+source of truth and the generated files are never edited by hand. Without `--out` a fresh temp
+directory is used and its path printed. Background and verdict: [mdbase-spike.md](mdbase-spike.md).
 
 ## Config file
 
@@ -87,24 +106,10 @@ Total: 10 | Valid: 7 | Invalid: 2 | Skipped: 1
 | 0 | No file has errors — **warnings and skipped files still exit 0** |
 | 1 | At least one file has errors |
 
-!!! warning "Exit code alone is not a verdict"
-    An **unknown entity type is a warning, not an error**: the file is reported as
-    `Valid`, `invalid` stays `0`, and the command exits `0`.
-
-    ```
-    ---
-    entity: totally_made_up_xyz
-    ---
-    →  ⚠ entity: Unknown entity type: totally_made_up_xyz
-       Total: 1 | Valid: 1 | Invalid: 0    exit 0
-    ```
-
-    A typo in the type name therefore *passes*, because nothing knows what to check
-    the note against. The same applies to `Skipped` files — they were never
-    validated at all.
-
-    In CI or in a hook that must block on this, parse `-f json` and fail on
-    warnings where the message matches `Unknown entity type`.
+!!! note "Skipped is not validated"
+    An **unknown entity type is an error** (`✗ entity: Unknown entity type: …`, exit `1`).
+    A file with **no** type field at all is `Skipped`: it was never validated, and it
+    still exits `0`. Use `default_type` in the config to give such files a type.
 
 ## Library API
 

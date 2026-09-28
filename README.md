@@ -12,6 +12,7 @@ Obsidian plugin that validates vault frontmatter against schemas defined in the 
 - Entity/Property CRUD with auto-save
 - Link constraints: validate what linked notes must satisfy
 - Folder-based grouping
+- Pluggable shape engine: Zod (default) or [mdbase](https://mdbase.dev/) JSON Schema via `--engine mdbase`; `mdbase-export` compiles the vault schema to `mdbase.yaml` + `_types/*.md` (see [docs/mdbase-spike.md](docs/mdbase-spike.md))
 
 ## Install
 

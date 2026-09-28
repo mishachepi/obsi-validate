@@ -24,9 +24,10 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"obsidian": "latest",
+		"@callumalpass/mdbase": "^0.3.0-rc.7",
 		"commander": "^13.1.0",
 		"gray-matter": "^4.0.3",
+		"obsidian": "latest",
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {

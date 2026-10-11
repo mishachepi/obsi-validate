@@ -25,8 +25,8 @@ obsi-validate --vault-dir /path/to/vault -t task
 # JSON output
 obsi-validate --vault-dir /path/to/vault -f json
 
-# Same run, shape-checked by mdbase (JSON Schema) instead of Zod
-obsi-validate --vault-dir /path/to/vault --engine mdbase
+# Same run, shape-checked by the Zod engine (the plugin engine) instead of mdbase
+obsi-validate --vault-dir /path/to/vault --engine zod
 
 # Compile the vault schema to an mdbase collection (mdbase.yaml + _types/*.md)
 obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
@@ -43,7 +43,7 @@ obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
 | `-t, --type <entity>` | Filter results by entity type | all |
 | `--check-links` | Also validate body wikilinks and inline properties | off |
 | `--type-key-field <name>` | Frontmatter field identifying the entity type | auto-detected from schema, falls back to `entity` |
-| `--engine <name>` | Shape engine: `zod` or `mdbase` (JSON Schema via `@callumalpass/mdbase`). Bespoke rules (link constraints, expected folder, task intake, body links) run identically on both | `zod` |
+| `--engine <name>` | Shape engine: `mdbase` (JSON Schema via `@callumalpass/mdbase`) or `zod` (the plugin engine, kept as a regression oracle). Bespoke rules (link constraints, expected folder, task intake, body links) run identically on both | `mdbase` |
 
 Body wikilinks are **not** checked unless you pass `--check-links`. A run without it
 says nothing about broken links.

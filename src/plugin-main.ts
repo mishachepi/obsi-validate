@@ -3,6 +3,7 @@ import type { VaultSchema, VaultIndex, ValidateOptions, ValidationResult, Valida
 import { ensureSchema, bridgeValidateFile, bridgeValidateVault, buildVaultIndex } from "./bridge";
 import { ResultsView } from "./ResultsView";
 import { VaultResultsView } from "./VaultResultsView";
+import { findView } from "./view-lookup";
 import { ObsiValidateSettingTab } from "./SettingsTab";
 import {
   VIEW_TYPE_RESULTS,
@@ -61,7 +62,7 @@ export default class ObsiValidatePlugin extends Plugin {
       name: "Show validation results",
       callback: () => {
         this.activateView(VIEW_TYPE_RESULTS).then(() => {
-          const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
+          const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
           if (view && this.lastResult) view.renderSingleResult(this.lastResult);
         });
       },
@@ -73,7 +74,7 @@ export default class ObsiValidatePlugin extends Plugin {
     this.statusBarEl.addEventListener("click", () => {
       if (this.lastResult) {
         this.activateView(VIEW_TYPE_RESULTS).then(() => {
-          const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
+          const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
           if (view) view.renderSingleResult(this.lastResult!);
         });
       }
@@ -204,7 +205,7 @@ export default class ObsiValidatePlugin extends Plugin {
     this.renderStatusBar();
 
     // Update results panel if it's open
-    const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
+    const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
     if (view) view.renderSingleResult(result);
   }
 
@@ -292,13 +293,13 @@ export default class ObsiValidatePlugin extends Plugin {
     this.renderStatusBar();
 
     await this.activateView(VIEW_TYPE_RESULTS);
-    const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
+    const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
     if (view) view.renderSingleResult(result);
   }
 
   private async showVaultResults(summary: ValidationSummary) {
     await this.activateView(VIEW_TYPE_VAULT_RESULTS);
-    const view = this.getView<VaultResultsView>(VIEW_TYPE_VAULT_RESULTS);
+    const view = this.getView(VIEW_TYPE_VAULT_RESULTS, VaultResultsView);
     if (view) view.renderSummary(summary);
   }
 
@@ -324,9 +325,8 @@ export default class ObsiValidatePlugin extends Plugin {
     };
   }
 
-  private getView<T>(viewType: string): T | null {
-    const leaves = this.app.workspace.getLeavesOfType(viewType);
-    return leaves.length > 0 ? (leaves[0].view as T) : null;
+  private getView<T>(viewType: string, ctor: abstract new (...args: never[]) => T): T | null {
+    return findView(this.app.workspace.getLeavesOfType(viewType), ctor);
   }
 
   private async activateView(viewType: string): Promise<void> {
@@ -339,7 +339,8 @@ export default class ObsiValidatePlugin extends Plugin {
     }
     const leaves = this.app.workspace.getLeavesOfType(viewType);
     if (leaves.length > 0) {
-      this.app.workspace.revealLeaf(leaves[0]);
+      await this.app.workspace.revealLeaf(leaves[0]);
+      await leaves[0].loadIfDeferred?.();
     }
   }
 

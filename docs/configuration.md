@@ -12,11 +12,17 @@ All settings are in **Settings > Property Validator**. Three tabs: Settings, Ent
 |---------|---------|-------------|
 | **Schema directory** | `.` | Folder with `entities/` and `properties/` subdirs, relative to vault root |
 | **Entity field** | `entity` | Frontmatter field that identifies a note's entity type |
-| **Default entity type** | *(empty)* | Fallback entity type when the field is missing. Empty = skip |
+| **Default entity type** | *(empty)* | Fallback entity type when the field is missing: the note is validated as that type, and the missing field itself is not an error. Empty = skip |
 | **Show ribbon icon** | off | "Validate vault" button in the left sidebar |
 
 !!! tip
     Set **Schema directory** to a dedicated folder like `System` to keep schema files separate from your notes.
+
+!!! note "What is never validated"
+    The plugin and the CLI skip the same files: anything under a dot-folder, `_archive/` or
+    `_skill/`, and folder `_index.md` files. Archived notes are also left out of link
+    resolution, so an archived copy never stands in for a live note of the same name.
+    Schema loading skips `_deprecated/`.
 
 ---
 

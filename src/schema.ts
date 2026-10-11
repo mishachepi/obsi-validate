@@ -1,4 +1,4 @@
-import matter from "gray-matter";
+import { parseFrontmatter } from "./frontmatter.js";
 import { z, type ZodTypeAny } from "zod";
 import type {
   RawFile,
@@ -29,7 +29,7 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
   const results: PropertySchema[] = [];
 
   for (const file of files) {
-    const { data } = matter(file.content);
+    const { data } = parseFrontmatter(file.content);
     if (!data.property_name && !data.property_type) continue;
 
     const name = data.property_name ?? data.name ?? nameFromPath(file.path, "_property.md");
@@ -80,7 +80,7 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
   const results: EntitySchema[] = [];
 
   for (const file of files) {
-    const { data } = matter(file.content);
+    const { data } = parseFrontmatter(file.content);
     if (!data.entity_name && !data.properties) continue;
 
     const name = data.entity_name ?? data.name ?? nameFromPath(file.path, "_entity.md");

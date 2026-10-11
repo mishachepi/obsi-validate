@@ -183,4 +183,7 @@ export type ValidateOptions = {
   vaultIndex?: VaultIndex;
   /** When true, also validate body wikilinks and inline properties */
   checkLinks?: boolean;
+  /** Vault root when file paths are absolute (CLI); folder rules compare
+   * vault-relative paths. Plugin paths are already vault-relative. */
+  vaultRoot?: string;
 };

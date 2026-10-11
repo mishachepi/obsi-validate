@@ -1,4 +1,4 @@
-import matter from "gray-matter";
+import { parseFrontmatter } from "./frontmatter.js";
 import type {
   RawFile,
   VaultSchema,
@@ -23,7 +23,7 @@ export function validateFile(
 
   let data: Record<string, unknown>;
   try {
-    data = matter(file.content).data;
+    data = parseFrontmatter(file.content).data;
   } catch (e) {
     return {
       file: file.path,
@@ -114,7 +114,9 @@ export function validateFile(
   // Check expected folder constraint
   const expectedFolderRaw = schema.expectedFolderMap.get(entityType);
   const expectedFolder = expectedFolderRaw?.replace(/[/\\]+$/, "");
-  if (expectedFolder && !file.path.startsWith(expectedFolder + "/")) {
+  const root = options?.vaultRoot?.replace(/[/\\]+$/, "");
+  const vaultPath = root && file.path.startsWith(root + "/") ? file.path.slice(root.length + 1) : file.path;
+  if (expectedFolder && !vaultPath.startsWith(expectedFolder + "/")) {
     errors.push({
       field: "__path__",
       message: `File must be in folder "${expectedFolder}/"`,
@@ -123,8 +125,11 @@ export function validateFile(
     });
   }
 
-  // Shape half — pluggable engine (Zod by default, mdbase via options)
-  const shape = (options?.shapeEngine ?? zodShapeEngine)(data, entityType, schema, typeKeyField);
+  // Shape half — pluggable engine (Zod by default, mdbase via options).
+  // A defaulted type counts as the note's type_key; otherwise every untyped
+  // note would fail "type_key is required" under its own default.
+  const shapeData = rawEntityType === undefined ? { ...data, [typeKeyField]: entityType } : data;
+  const shape = (options?.shapeEngine ?? zodShapeEngine)(shapeData, entityType, schema, typeKeyField);
   errors.push(...shape.errors);
   warnings.push(...shape.warnings);
 

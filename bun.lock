@@ -5,7 +5,7 @@
     "": {
       "name": "obsi-validate",
       "dependencies": {
-        "@callumalpass/mdbase": "0.3.0-rc.7",
+        "@callumalpass/mdbase": "0.3.0-rc.9",
         "commander": "^13.1.0",
         "gray-matter": "^4.0.3",
         "obsidian": "latest",
@@ -21,7 +21,7 @@
     },
   },
   "packages": {
-    "@callumalpass/mdbase": ["@callumalpass/mdbase@0.3.0-rc.7", "", { "dependencies": { "@marcbachmann/cel-js": "^8.0.0", "ajv": "^8.20.0", "ajv-formats": "^3.0.1", "gray-matter": "^4.0.3", "js-yaml": "^4.3.0", "picomatch": "^4.0.5", "semver": "^7.8.5", "sql.js": "^1.12.0", "ulid": "^2.3.0", "yaml": "^2.9.0" }, "bin": { "mdb-profile": "dist/bin/mdb-profile.js" } }, "sha512-GQwh2gm+f8OmJ6EjueosJFoiMdmmW9OI5LL50sOBt0qYBKi1DaDCoG5A50fs/ma5k22fyLo7Xccckxe1TOn4AA=="],
+    "@callumalpass/mdbase": ["@callumalpass/mdbase@0.3.0-rc.9", "", { "dependencies": { "@marcbachmann/cel-js": "^8.0.0", "ajv": "^8.20.0", "ajv-formats": "^3.0.1", "gray-matter": "^4.0.3", "js-yaml": "^4.3.0", "picomatch": "^4.0.5", "semver": "^7.8.5", "sql.js": "^1.12.0", "ulid": "^2.3.0", "yaml": "^2.9.0" }, "bin": { "mdb-profile": "dist/bin/mdb-profile.js" } }, "sha512-bXYhTqRqd928j9osTFGQTmzKG59W1pelmBV+UaEF1WOL+E5WEQVl4sBKvvdGvBVD9VMAq7IF1zJTkr3gqNb4Mw=="],
 
     "@codemirror/state": ["@codemirror/state@6.5.0", "", { "dependencies": { "@marijn/find-cluster-break": "^1.0.0" } }, "sha512-MwBHVK60IiIHDcoMet78lxt6iw5gJOGSbNbOIVBHWVXIH4/Nq1+GQgLLGgI1KlnN86WDXsPudVaqYHKBIx7Eyw=="],
 

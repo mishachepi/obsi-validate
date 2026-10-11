@@ -5,13 +5,13 @@ implementation `@callumalpass/mdbase`) replace the hand-rolled Zod engine as the
 obsi-validate, the way TaskNotes built `mdbase-tasknotes` on it — **while the vault's
 entity/property notes stay the single source of truth**?
 
-Branch `feat/mdbase-spike`, package `@callumalpass/mdbase@0.3.0-rc.7` (no stable 0.3.0 on npm yet).
+Package `@callumalpass/mdbase@0.3.0-rc.9`, pinned exactly (no stable 0.3.0 on npm yet).
 
 ## Verdict
 
 | Path | Verdict | Why |
 |---|---|---|
-| **CLI** (hooks, CI, `obsi-validate`) | **GO** | 100 % parity with Zod on the live vault and on the 40-case harness; 2× faster; nothing bespoke lost. |
+| **CLI** (hooks, CI, `obsi-validate`) | **GO** | 100 % parity with Zod on the live vault and on the 40-case harness; nothing bespoke lost; about 0.1 s slower per run. |
 | **Obsidian plugin** | **NO-GO for now** | Technically feasible (pure in-memory validator exists), but the package's `exports` map forbids a sub-path import, so the plugin would swallow all of mdbase: bundle 162 KB → ~700 KB and a `node:fs`/`node:path` dependency that breaks the mobile build. Revisit when upstream exposes a `validate`-only entry, or via a vendored copy of the JSON-Schema step. |
 | **Full `_system/**` → `mdbase.yaml`+`_types/` migration** | **not opened** | Out of scope by design; the compile-step model (below) makes it unnecessary. |
 
@@ -22,14 +22,15 @@ express, and generation is what makes that a non-issue.
 
 ## Measurements
 
-**Live vault** (4136 files, `--schema-dir /Volumes/mch/_system`), both engines:
+**Live vault** (4240 files, `--schema-dir /Volumes/mch/_system`, warm file cache), both engines:
 
 | | Zod | mdbase |
 |---|---|---|
-| valid / invalid / skipped | 3305 / 302 / 529 | 3305 / 302 / 529 |
-| files with diagnostics, identical (validity + error fields + warning fields) | 918 / 918 | |
-| with `--check-links` (bespoke layer on top) | 2911 / 700 | 2911 / 700 |
-| wall time | 1.26 s | 0.56 s |
+| valid / invalid / skipped | 3410 / 300 / 530 | 3410 / 300 / 530 |
+| files with diagnostics, identical (validity + error fields + warning fields) | 922 / 922 | |
+| with `--check-links`, files with diagnostics identical | 1224 / 1224 | |
+| wall time, whole vault | ~0.40 s | ~0.55 s |
+| wall time, one file with `--check-links` (the hook) | ~0.34 s | ~0.45 s |
 
 **Harness** (`tests/mdbase/parity.test.ts`, 40 cases, both engines through `validateFile()`):
 

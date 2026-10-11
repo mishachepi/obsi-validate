@@ -5,8 +5,8 @@ import {
   generateEntityFrontmatter,
   generatePropertyFrontmatter,
 } from "./ui/yamlWriter";
-import matter from "gray-matter";
-import { aliasKeysFor } from "./link-index";
+import { parseFrontmatter } from "./frontmatter";
+import { aliasKeysFor, isInSkippedDir, isValidationTarget } from "./link-index";
 import type {
   RawFile,
   VaultSchema,
@@ -98,12 +98,12 @@ export async function bridgeValidateFile(
 /** Build vault index: normalized note name → frontmatter data */
 export async function buildVaultIndex(app: App): Promise<VaultIndex> {
   const index: VaultIndex = new Map();
-  const files = app.vault.getMarkdownFiles();
+  const files = app.vault.getMarkdownFiles().filter((f) => !isInSkippedDir(f.path));
   const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
   for (const file of files) {
     const content = await app.vault.cachedRead(file);
     try {
-      const data = matter(content).data;
+      const data = parseFrontmatter(content).data;
       const baseName = file.basename;
       // Full path always wins (unique key)
       const pathNoExt = file.path.replace(/\.md$/, "");
@@ -132,7 +132,7 @@ export async function buildVaultIndex(app: App): Promise<VaultIndex> {
   // markdown, so getMarkdownFiles() misses them and every canvas link reads as
   // broken. They carry no frontmatter — presence is all that matters here.
   for (const file of app.vault.getFiles()) {
-    if (file.extension !== "canvas") continue;
+    if (file.extension !== "canvas" || isInSkippedDir(file.path)) continue;
     const entry = { path: file.path, data: {} };
     for (const key of [file.path, file.name]) {
       if (!index.has(key)) index.set(key, entry);
@@ -147,7 +147,9 @@ export async function bridgeValidateVault(
   schema: VaultSchema,
   options?: ValidateOptions,
 ): Promise<ValidationSummary> {
-  const allFiles = app.vault.getMarkdownFiles();
+  const allFiles = app.vault
+    .getMarkdownFiles()
+    .filter((f) => !isInSkippedDir(f.path) && isValidationTarget(f.path));
   const rawFiles = await Promise.all(
     allFiles.map((f) => tFileToRawFile(app, f)),
   );

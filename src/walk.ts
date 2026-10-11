@@ -1,6 +1,6 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
-import { isLinkableFile } from "./link-index.js";
+import { ALWAYS_SKIPPED_DIRS, isLinkableFile, isValidationTarget } from "./link-index.js";
 
 const EMPTY_EXCLUDES: ReadonlySet<string> = new Set();
 
@@ -34,7 +34,7 @@ export async function walkVaultFiles(
       // Skip archive / shadow-override trees: their duplicate-basename notes
       // would shadow canonical notes in the link index (first-wins). Fixed
       // defaults — always on, independent of user-configured excludeDirs.
-      if (entry.isDirectory() && (entry.name === "_archive" || entry.name === "_skill")) continue;
+      if (entry.isDirectory() && ALWAYS_SKIPPED_DIRS.has(entry.name)) continue;
       if (entry.isDirectory() && excludeDirs.has(entry.name)) continue;
       const fullPath = join(d, entry.name);
       if (entry.isDirectory()) {
@@ -43,7 +43,7 @@ export async function walkVaultFiles(
       }
       if (!entry.isFile()) continue;
       if (mode === "targets") {
-        if (entry.name.endsWith(".md") && entry.name !== "_index.md") paths.push(fullPath);
+        if (isValidationTarget(entry.name)) paths.push(fullPath);
       } else if (isLinkableFile(entry.name)) {
         paths.push(fullPath);
       }

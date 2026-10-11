@@ -4,6 +4,7 @@ import { readFile, stat } from "fs/promises";
 import { join, relative } from "path";
 import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
+import { parseFrontmatter } from "./frontmatter.js";
 import { resolveConfig } from "./config.js";
 import { indexKeysFor, aliasKeysFor } from "./link-index.js";
 import { walkMdFiles, walkLinkableFiles, walkSchemaFiles } from "./walk.js";
@@ -181,6 +182,7 @@ program
       typeKeyField,
       defaultEntityType: config.default_type || undefined,
       checkLinks: options.checkLinks ?? false,
+      vaultRoot: options.vaultDir ?? ((await stat(vaultDir)).isDirectory() ? vaultDir : undefined),
     };
     if (options.engine === "mdbase") {
       // Loaded on demand: keeps mdbase out of the plugin bundle (the plugin stays on Zod).
@@ -195,7 +197,6 @@ program
 
     // Build vault index when check-links is enabled
     if (options.checkLinks) {
-      const matter = (await import("gray-matter")).default;
       // Vault index must cover the WHOLE vault for cross-folder link resolution.
       // Always prefer --vault-dir; only fall back to the target when no flag given.
       // (Previously, validating a directory indexed only that dir → every link to a
@@ -210,10 +211,11 @@ program
         if (!isCanvas) {
           const fm = await readFrontmatterOnly(p);
           try {
-            data = matter(fm).data;
+            data = parseFrontmatter(fm).data;
           } catch {}
         }
-        const entry = { path: p, data };
+        // Vault-relative, like the plugin's TFile.path — folder rules match on it.
+        const entry = { path: relative(vaultRoot, p), data };
         entries.push(entry);
         const { strong, weak } = indexKeysFor(relative(vaultRoot, p));
         for (const key of strong) vaultIndex.set(key, entry);

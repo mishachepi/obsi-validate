@@ -56,3 +56,21 @@ export function aliasKeysFor(data: Record<string, unknown> | undefined): string[
     .map((v) => v.trim())
     .filter((v) => v.length > 0);
 }
+
+/** Folders that are never validated and never linked into: `_archive/` holds
+ * retired copies that would otherwise shadow live notes of the same name.
+ * Shared by the CLI walker and the plugin so both see the same vault. */
+export const ALWAYS_SKIPPED_DIRS: ReadonlySet<string> = new Set(["_archive", "_skill"]);
+
+/** True when a vault-relative path lies under a dot-folder, an always-skipped
+ * folder, or one of `extra` (config `exclude_dirs`). */
+export function isInSkippedDir(relPath: string, extra?: ReadonlySet<string>): boolean {
+  const dirs = relPath.replace(/\\/g, "/").split("/").slice(0, -1);
+  return dirs.some((d) => d.startsWith(".") || ALWAYS_SKIPPED_DIRS.has(d) || (extra?.has(d) ?? false));
+}
+
+/** True for files validated as notes: markdown, except folder `_index.md` files. */
+export function isValidationTarget(relPath: string): boolean {
+  const name = relPath.replace(/\\/g, "/").split("/").pop() ?? relPath;
+  return name.endsWith(".md") && name !== "_index.md";
+}

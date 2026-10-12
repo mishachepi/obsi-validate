@@ -4,7 +4,7 @@ import { readFile, stat } from "fs/promises";
 import { join, relative } from "path";
 import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
-import { parseFrontmatter } from "./frontmatter.js";
+import { frontmatterBlock, parseFrontmatter } from "./frontmatter.js";
 import { resolveConfig } from "./config.js";
 import { indexKeysFor, aliasKeysFor } from "./link-index.js";
 import { walkMdFiles, walkLinkableFiles, walkSchemaFiles } from "./walk.js";
@@ -27,14 +27,9 @@ async function readMdFiles(dir: string): Promise<RawFile[]> {
   return files;
 }
 
-/** Extract frontmatter prefix from a file — only this part is passed to gray-matter */
+/** Read a file's frontmatter block only — the body is not needed without --check-links */
 async function readFrontmatterOnly(path: string): Promise<string> {
-  const content = await readFile(path, "utf-8");
-  const firstSep = content.indexOf("---");
-  if (firstSep === -1) return "";
-  const secondSep = content.indexOf("---", firstSep + 3);
-  if (secondSep === -1) return "";
-  return content.slice(0, secondSep + 3);
+  return frontmatterBlock(await readFile(path, "utf-8"));
 }
 
 /** Validate files one at a time — only frontmatter in memory */

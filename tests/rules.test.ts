@@ -5,7 +5,7 @@ import { validateFile } from "../src/validate.js";
 import { mdbaseShapeEngine } from "../src/mdbase/adapter.js";
 import { ALWAYS_SKIPPED_DIRS, isInSkippedDir, isValidationTarget } from "../src/link-index.js";
 import { findView } from "../src/view-lookup.js";
-import { parseFrontmatter } from "../src/frontmatter.js";
+import { frontmatterBlock, parseFrontmatter } from "../src/frontmatter.js";
 import type { ValidateOptions } from "../src/types.js";
 import { readMdFiles } from "./helpers.js";
 
@@ -130,5 +130,19 @@ describe("parseFrontmatter", () => {
       parseFrontmatter(content);
     } catch {}
     expect(validateFile({ path: "x.md", content }, schema, engines.zod).errors[0].field).toBe("_yaml");
+  });
+});
+
+describe("frontmatterBlock", () => {
+  test("stops at the closing --- line, not at --- inside a value", () => {
+    const note = '---\ndod: "a --- b"\nx: 1\n---\nbody --- more\n';
+    expect(frontmatterBlock(note)).toBe('---\ndod: "a --- b"\nx: 1\n---');
+    expect(parseFrontmatter(frontmatterBlock(note)).data).toEqual({ dod: "a --- b", x: 1 });
+  });
+  test("a note that does not start with --- has no frontmatter", () => {
+    expect(frontmatterBlock("intro\n---\ntype_key: x\n---\n")).toBe("");
+  });
+  test("an unclosed block is returned whole so the parser decides", () => {
+    expect(frontmatterBlock("---\ntype_key: x\n")).toBe("---\ntype_key: x\n");
   });
 });

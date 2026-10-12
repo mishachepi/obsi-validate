@@ -9,3 +9,15 @@ import matter from "gray-matter";
 export function parseFrontmatter(content: string): { data: Record<string, any>; content: string } {
   return matter(content, {});
 }
+
+/** The leading frontmatter block of a note (opening `---` through the closing
+ * `---` line), or "" when the note does not start with one. The closing
+ * delimiter must begin a line, as in gray-matter, so `---` inside a value
+ * does not cut the block short. An unclosed block is returned whole and the
+ * parser reports it. */
+export function frontmatterBlock(content: string): string {
+  if (!content.startsWith("---")) return "";
+  const close = content.indexOf("\n---", 3);
+  if (close === -1) return content;
+  return content.slice(0, close + 4);
+}

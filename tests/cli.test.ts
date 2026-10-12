@@ -82,6 +82,25 @@ describe("CLI on the mini vault", () => {
     expect(files.some((f) => f.endsWith("_index.md"))).toBe(false);
   });
 
+  test("frontmatter verdicts are the same with and without --check-links", () => {
+    // Only the link layer may differ: plain mode reads the frontmatter block,
+    // --check-links reads the whole file, and both must parse it the same way.
+    const shape = (s: Summary) =>
+      Object.fromEntries(
+        s.results
+          .map((r) => [r.file, r.errors.map((e) => e.field).filter((f) => !f.startsWith("__")).sort()] as const)
+          .filter(([, errs]) => errs.length > 0),
+      );
+    const linkFields = new Set(["epic", "owner", "reviewer", "stage"]);
+    const withLinks = shape(runJson(VAULT, "--schema-dir", SCHEMA, "--check-links").summary);
+    for (const [f, errs] of Object.entries(withLinks)) {
+      const rest = errs.filter((e) => !linkFields.has(e));
+      if (rest.length) withLinks[f] = rest;
+      else delete withLinks[f];
+    }
+    expect(shape(runJson(VAULT, "--schema-dir", SCHEMA).summary)).toEqual(withLinks);
+  });
+
   test("without --check-links, link rules and body links are not checked", () => {
     const v = verdicts(runJson(VAULT, "--schema-dir", SCHEMA).summary);
     expect(v["tasks/broken-body-link.md"]).toBeUndefined();

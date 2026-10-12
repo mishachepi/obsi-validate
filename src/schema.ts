@@ -1,5 +1,6 @@
 import { parseFrontmatter } from "./frontmatter.js";
 import { z, type ZodTypeAny } from "zod";
+import { asList } from "./values.js";
 import type {
   RawFile,
   PropertySchema,
@@ -10,9 +11,12 @@ import type {
   VaultSchema,
 } from "./types.js";
 
-/** Derive a name from a schema file path: filename minus the suffix and ".md" */
-function nameFromPath(path: string, suffix: string): string {
-  return path.split("/").pop()?.replace(suffix, "").replace(".md", "") ?? "";
+/** Type field used when neither the caller nor the schema names one. */
+export const DEFAULT_TYPE_KEY_FIELD = "entity";
+
+/** True for an entity or property definition note (they are schema, not notes to validate). */
+export function isSchemaDefinition(data: Record<string, unknown>): boolean {
+  return Boolean(data.entity_name || data.property_name);
 }
 
 /** Folder of a schema file relative to its base directory ("properties" or "entities").
@@ -30,9 +34,9 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
 
   for (const file of files) {
     const { data } = parseFrontmatter(file.content);
-    if (!data.property_name && !data.property_type) continue;
+    if (!data.property_name) continue;
 
-    const name = data.property_name ?? data.name ?? nameFromPath(file.path, "_property.md");
+    const name = String(data.property_name);
     const folder = folderFromPath(file.path, "properties");
 
     // Parse link constraints
@@ -49,9 +53,7 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
     const prop: PropertySchema = {
       name,
       property_type: data.property_type ?? "string",
-      allowed_values: data.allowed_values
-        ? toArray(data.allowed_values)
-        : undefined,
+      allowed_values: data.allowed_values != null ? (asList(data.allowed_values) as (string | number)[]) : undefined,
       min_value: data.min_value ?? undefined,
       max_value: data.max_value ?? undefined,
       unit: data.unit ?? undefined,
@@ -69,6 +71,7 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
     };
 
     prop.validator = buildPropertyValidator(prop);
+    if (prop.custom_validator) prop.customCheck = compileCustomValidator(prop.custom_validator);
     results.push(prop);
   }
 
@@ -81,9 +84,9 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
 
   for (const file of files) {
     const { data } = parseFrontmatter(file.content);
-    if (!data.entity_name && !data.properties) continue;
+    if (!data.entity_name) continue;
 
-    const name = data.entity_name ?? data.name ?? nameFromPath(file.path, "_entity.md");
+    const name = String(data.entity_name);
     const folder = folderFromPath(file.path, "entities");
 
     // Parse properties block: { propName: { required: true } } or { propName: {} }
@@ -169,15 +172,15 @@ function resolveInheritance(
   return resolved;
 }
 
-/** Auto-detect the frontmatter field used to discriminate entity types.
- *
- * The vault's own schema reveals the convention: if a property named `type_key`
- * is declared, instances use `type_key:`. Otherwise fall back to the legacy
- * `entity` default. Returns undefined when caller wants no auto-detection.
- */
+/** `type_key` when the schema declares a property of that name, else undefined. */
 export function detectTypeKeyField(schema: VaultSchema): string | undefined {
-  if (schema.properties.some((p) => p.name === "type_key")) return "type_key";
-  return undefined;
+  return schema.properties.some((p) => p.name === "type_key") ? "type_key" : undefined;
+}
+
+/** The type field to use: an explicit setting, else the one the schema
+ * declares, else DEFAULT_TYPE_KEY_FIELD. Shared by the CLI and the plugin. */
+export function resolveTypeKeyField(schema: VaultSchema, explicit?: string): string {
+  return explicit?.trim() || detectTypeKeyField(schema) || DEFAULT_TYPE_KEY_FIELD;
 }
 
 /** Build complete VaultSchema from raw file contents */
@@ -198,32 +201,14 @@ export function loadSchema(
   const propertyPatternMap = new Map<string, RegExp[]>();
   const entityByName = new Map(entities.map((e) => [e.name, e]));
   for (const entity of entities) {
-    const inherited = inheritance.get(entity.name);
-    const mergedProps = inherited?.properties ?? entity.properties;
-    const origins = inherited?.origins ?? new Map<string, string>();
-    const resolved: ResolvedProperty[] = [];
-
-    for (const [propName, config] of Object.entries(mergedProps)) {
-      const propSchema = propByName.get(propName);
-      const inheritedFrom = origins.get(propName);
-
-      if (propSchema) {
-        resolved.push({
-          ...propSchema,
-          required: config.required ?? config.required_unless !== undefined,
-          required_unless: normaliseRequiredUnless(propName, config.required_unless),
-          inheritedFrom,
-        });
-      } else {
-        resolved.push({
-          name: propName,
-          property_type: "unknown",
-          required: config.required ?? config.required_unless !== undefined,
-          required_unless: normaliseRequiredUnless(propName, config.required_unless),
-          inheritedFrom,
-        });
-      }
-    }
+    const { properties: merged, origins } = inheritance.get(entity.name)!;
+    const resolved: ResolvedProperty[] = Object.entries(merged).map(([propName, config]) => ({
+      ...(propByName.get(propName) ?? { name: propName, property_type: "unknown" }),
+      // required_unless implies required, unless `required: false` says otherwise.
+      required: config.required ?? config.required_unless != null,
+      required_unless: normalizeRequiredUnless(propName, config.required_unless),
+      inheritedFrom: origins.get(propName),
+    }));
 
     entityMap.set(entity.name, resolved);
     allowExtraMap.set(entity.name, entity.allow_extra ?? false);
@@ -319,22 +304,24 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
   }
 }
 
-function toArray(val: unknown): (string | number)[] {
-  if (Array.isArray(val)) return val;
-  if (val != null) return [val as string | number];
-  return [];
+/** Compile a property's `custom_validator` expression once. The expression
+ * sees `value` and returns true to pass, false or a message to fail. It is
+ * code from the vault's own schema and runs unsandboxed. A syntax error is
+ * reported each time the check runs. */
+function compileCustomValidator(expression: string): (value: unknown) => unknown {
+  try {
+    // eslint-disable-next-line no-new-func
+    return new Function("value", `return (${expression})`) as (value: unknown) => unknown;
+  } catch (e) {
+    return () => {
+      throw e;
+    };
+  }
 }
 
-
-/**
- * Compile an entity's `property_patterns`, walking `extends` so a child inherits
- * its parent's families.
- *
- * A malformed regex THROWS rather than being skipped. A pattern that silently
- * compiles to nothing would leave the schema looking configured while every
- * field it was meant to cover kept warning — the failure mode this whole task
- * exists to remove, reintroduced one level up.
- */
+/** Compile an entity's `property_patterns`, walking `extends` so a child
+ * inherits its parent's families. A malformed regex throws: skipping it would
+ * leave the schema looking configured while it matches nothing. */
 function compilePatterns(
   entity: EntitySchema,
   byName: Map<string, EntitySchema>,
@@ -363,15 +350,9 @@ function compilePatterns(
 }
 
 
-/**
- * Validate and normalise a `required_unless` block.
- *
- * Throws on a malformed shape rather than ignoring it. A condition silently
- * dropped would make the field unconditionally required again — the schema would
- * look like it carried the exemption while every legacy note kept failing, which
- * is the noise this feature exists to remove.
- */
-function normaliseRequiredUnless(
+/** Validate and normalize a `required_unless` block. A malformed block
+ * throws: silently dropping it would make the field unconditionally required. */
+function normalizeRequiredUnless(
   propName: string,
   raw: unknown,
 ): Record<string, string[]> | undefined {
@@ -384,7 +365,7 @@ function normaliseRequiredUnless(
 
   const out: Record<string, string[]> = {};
   for (const [field, values] of Object.entries(raw as Record<string, unknown>)) {
-    const list = Array.isArray(values) ? values : [values];
+    const list = asList(values);
     if (list.length === 0) {
       throw new Error(
         `Property "${propName}": required_unless.${field} lists no values — ` +

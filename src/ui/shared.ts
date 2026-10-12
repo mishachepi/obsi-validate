@@ -1,5 +1,18 @@
 import { Modal, App, Notice } from "obsidian";
 import type ObsiValidatePlugin from "../plugin-main";
+import type { LinkConstraints } from "../types";
+
+/** Property types whose values are links and can carry link constraints. */
+export function isLinkType(type: string): boolean {
+  return type === "link" || type === "links" || type === "list";
+}
+
+/** The constraints to save for a property: none unless it is a link type
+ * with at least one constraint set. */
+export function constraintsToSave(type: string, lc: LinkConstraints): LinkConstraints | undefined {
+  const any = lc.target_type_key || lc.target_folder || lc.target_has_property || lc.target_property_value;
+  return isLinkType(type) && any ? lc : undefined;
+}
 
 /** Build a debounced auto-save function. Calls `save` after `delayMs` of
  * inactivity, surfaces failures as a Notice, and invalidates the plugin's
@@ -15,8 +28,7 @@ export function makeAutoSave(
     timer = setTimeout(async () => {
       try {
         await save();
-        plugin.schema = null;
-        plugin.schemaLoading = null;
+        plugin.invalidateSchema();
       } catch (e) {
         new Notice(`Failed to save: ${e}`);
       }
@@ -28,7 +40,7 @@ export function makeAutoSave(
 export function filterSchemaList(query: string, listEl: HTMLElement): void {
   const q = query.toLowerCase();
   listEl.querySelectorAll(".obsi-validate-schema-item").forEach((el) => {
-    const name = (el as HTMLElement).dataset.name ?? "";
+    const name = ((el as HTMLElement).dataset.name ?? "").toLowerCase();
     (el as HTMLElement).style.display = name.includes(q) ? "" : "none";
   });
   listEl.querySelectorAll(".obsi-validate-folder-heading").forEach((el) => {

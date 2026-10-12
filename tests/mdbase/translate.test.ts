@@ -36,6 +36,18 @@ describe("propertyToJsonSchema — mapping table", () => {
   test("date → string (mdbase has no date type; Date objects are the adapter's job)", () => {
     expect(propertyToJsonSchema(byName(s, "task", "created"))).toEqual({ type: "string" });
   });
+  test("emoji carries Zod's emoji pattern", () => {
+    expect(propertyToJsonSchema(byName(s, "card", "icon"))).toEqual({
+      type: "string",
+      pattern: "^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$",
+    });
+  });
+  test("required: false drops the required_unless clause; numeric values match both spellings", () => {
+    const card = entityToTypeDef(s, "card", "type_key").schema.value as Record<string, any>;
+    expect(card.allOf).toEqual([
+      { if: { properties: { priority: { enum: ["1", 1] } }, required: ["priority"] }, then: {}, else: { required: ["estimate"] } },
+    ]);
+  });
   test("any and unknown → {} (permissive on both engines)", () => {
     expect(propertyToJsonSchema(byName(s, "task", "dod"))).toEqual({});
     expect(propertyToJsonSchema(byName(s, "page", "unknown_prop"))).toEqual({});
@@ -73,7 +85,7 @@ describe("entityToTypeDef — entity shape", () => {
     const a = JSON.stringify(translateSchema(s, "type_key"));
     const b = JSON.stringify(translateSchema(s, "type_key"));
     expect(a).toBe(b);
-    expect(translateSchema(s, "type_key").types.map((t) => t.name)).toEqual(["base", "note", "page", "task"]);
+    expect(translateSchema(s, "type_key").types.map((t) => t.name)).toEqual(["base", "card", "note", "page", "task"]);
   });
 });
 
@@ -105,11 +117,11 @@ describe("exportMdbase — files on disk", () => {
     const out = await mkdtemp(join(tmpdir(), "obsi-mdbase-"));
     dirs.push(out);
     const first = await exportMdbase(s, "type_key", out);
-    expect(first.sort()).toEqual(["_types/base.md", "_types/note.md", "_types/page.md", "_types/task.md", "mdbase.yaml"].sort());
+    expect(first.sort()).toEqual(["_types/base.md", "_types/card.md", "_types/note.md", "_types/page.md", "_types/task.md", "mdbase.yaml"].sort());
     const snapshot = Object.fromEntries(await Promise.all(first.map(async (f) => [f, await readFile(join(out, f), "utf-8")])));
     await exportMdbase(s, "type_key", out);
     for (const f of first) expect(await readFile(join(out, f), "utf-8")).toBe(snapshot[f]);
-    expect((await readdir(join(out, "_types"))).length).toBe(4);
+    expect((await readdir(join(out, "_types"))).length).toBe(5);
 
     const yaml = snapshot["mdbase.yaml"];
     expect(yaml.startsWith("spec_version:")).toBe(true);

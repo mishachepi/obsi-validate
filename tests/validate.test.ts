@@ -7,7 +7,7 @@ import {
   validateFiles,
 } from "../src/validate.js";
 import type { VaultIndex } from "../src/types.js";
-import { indexKeysFor, isLinkableFile, aliasKeysFor } from "../src/link-index.js";
+import { aliasKeysFor, buildIndexFromEntries, indexKeysFor, resolveLink } from "../src/link-index.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 async function getSchema() {
@@ -593,9 +593,7 @@ describe("link constraints in property values", () => {
 
 describe("validateBodyLinks", () => {
   function indexWith(...names: string[]): VaultIndex {
-    const index: VaultIndex = new Map();
-    for (const name of names) index.set(name, { path: `${name}.md`, data: {} });
-    return index;
+    return buildIndexFromEntries(names.map((name) => ({ path: `${name}.md`, data: {} })));
   }
 
   test("table with valid wikilink in cell produces no errors", () => {
@@ -787,49 +785,27 @@ describe("validateFiles", () => {
   });
 });
 
-describe("link index keys (canvas + path-style wikilinks)", () => {
-  test("markdown note is reachable by path and by basename", () => {
-    const { strong, weak } = indexKeysFor("_system/entities/_index.md");
-    expect(strong).toEqual(["_system/entities/_index"]);
-    expect(weak).toEqual(["_index"]);
+describe("link index keys", () => {
+  test("a note is reachable by its path and every shorter suffix, lower-cased", () => {
+    expect(indexKeysFor("_system/entities/_index.md")).toEqual(["_system/entities/_index", "entities/_index", "_index"]);
   });
 
-  test("canvas keeps its extension in both spellings", () => {
-    // Obsidian writes [[arch.canvas]] — dropping the extension breaks resolution.
-    const { strong, weak } = indexKeysFor("_system/canvases/arch.canvas");
-    expect(strong).toEqual(["_system/canvases/arch.canvas"]);
-    expect(weak).toEqual(["arch.canvas"]);
+  test("a canvas keeps its extension", () => {
+    expect(indexKeysFor("_system/canvases/arch.canvas")).toEqual(["_system/canvases/arch.canvas", "canvases/arch.canvas", "arch.canvas"]);
   });
 
-  test("root-level note yields the same key twice, harmlessly", () => {
-    const { strong, weak } = indexKeysFor("Note.md");
-    expect(strong).toEqual(["Note"]);
-    expect(weak).toEqual(["Note"]);
+  test("windows separators and case are normalized", () => {
+    expect(indexKeysFor("A\\B\\Note.md")).toEqual(["a/b/note", "b/note", "note"]);
   });
 
-  test("windows separators normalize to forward slashes", () => {
-    expect(indexKeysFor("a\\b\\c.md").strong).toEqual(["a/b/c"]);
-  });
-
-  test("only markdown and canvas are linkable", () => {
-    expect(isLinkableFile("a.md")).toBe(true);
-    expect(isLinkableFile("a.canvas")).toBe(true);
-    expect(isLinkableFile("a.png")).toBe(false);
-    expect(isLinkableFile("a.pdf")).toBe(false);
+  test("other files keep their extension", () => {
+    expect(indexKeysFor("assets/Photo.PNG")).toEqual(["assets/photo.png", "photo.png"]);
   });
 });
 
 describe("wikilink resolution against a path-keyed index", () => {
-  /** Index built the way the CLI builds it: strong keys win, weak are first-wins. */
-  function indexFrom(...relPaths: string[]): VaultIndex {
-    const index: VaultIndex = new Map();
-    for (const rel of relPaths) {
-      const { strong, weak } = indexKeysFor(rel);
-      const entry = { path: rel, data: {} };
-      for (const k of strong) index.set(k, entry);
-      for (const k of weak) if (!index.has(k)) index.set(k, entry);
-    }
-    return index;
+  function indexFrom(...paths: string[]): VaultIndex {
+    return buildIndexFromEntries(paths.map((path) => ({ path, data: {} })));
   }
 
   const body = (link: string) => `---\ntype_key: page\n---\n\nsee ${link}\n`;
@@ -880,12 +856,38 @@ describe("wikilink resolution against a path-keyed index", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("ambiguous basename stays first-wins", () => {
-    const index = indexFrom("a/Dup.md", "b/Dup.md");
-    expect(index.get("Dup")!.path).toBe("a/Dup.md");
-    // …while each full path still resolves to its own file
-    expect(index.get("a/Dup")!.path).toBe("a/Dup.md");
-    expect(index.get("b/Dup")!.path).toBe("b/Dup.md");
+  test("an ambiguous name goes to the shallower note; full paths stay exact", () => {
+    const index = indexFrom("x/b/Dup.md", "a/Dup.md");
+    expect(resolveLink(index, "Dup")!.path).toBe("a/Dup.md");
+    expect(resolveLink(index, "b/Dup")!.path).toBe("x/b/Dup.md");
+    expect(resolveLink(index, "x/b/Dup")!.path).toBe("x/b/Dup.md");
+  });
+
+  test("links resolve case-insensitively and with a .md extension, like Obsidian", () => {
+    const index = indexFrom("Notes/My Note.md");
+    expect(validateBodyLinks(body("[[my note]] [[My Note.md]] [[notes/MY NOTE]]"), index)).toHaveLength(0);
+  });
+
+  test("a path prefix that does not exist does not resolve", () => {
+    expect(validateBodyLinks(body("[[zzz/My Note]]"), indexFrom("Notes/My Note.md"))).toHaveLength(1);
+  });
+
+  test("attachments resolve like notes; a missing one is broken, as in Obsidian", () => {
+    const index = indexFrom("assets/photo.png", "docs/report.pdf");
+    expect(validateBodyLinks(body("![[photo.png]] [[report.pdf]]"), index)).toHaveLength(0);
+    expect(validateBodyLinks(body("![[missing.png]] [[v1.2]]"), index)).toHaveLength(2);
+  });
+
+  test("a file in the linking note's own folder wins an ambiguous name", () => {
+    const index = indexFrom("a/Dup.md", "deep/er/Dup.md");
+    expect(resolveLink(index, "Dup", "deep/er/Note.md")!.path).toBe("deep/er/Dup.md");
+    expect(resolveLink(index, "Dup", "other/Note.md")!.path).toBe("a/Dup.md");
+  });
+
+  test("archived files resolve by path but lose a name to live files", () => {
+    const index = indexFrom("_archive/Work.md", "areas/x/Work.md");
+    expect(resolveLink(index, "Work")!.path).toBe("areas/x/Work.md");
+    expect(resolveLink(index, "_archive/Work")!.path).toBe("_archive/Work.md");
   });
 });
 
@@ -915,25 +917,8 @@ describe("aliasKeysFor — frontmatter alias extraction", () => {
 describe("wikilink resolution — alias-aware index", () => {
   /** Index built the way the CLI builds it post-fix: filename keys first,
    * then a second pass fills alias keys without shadowing real names. */
-  function indexWithAliases(
-    files: Array<{ path: string; aliases?: unknown }>,
-  ): VaultIndex {
-    const index: VaultIndex = new Map();
-    const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
-    for (const f of files) {
-      const data = f.aliases === undefined ? {} : { aliases: f.aliases };
-      const entry = { path: f.path, data };
-      entries.push(entry);
-      const { strong, weak } = indexKeysFor(f.path);
-      for (const k of strong) index.set(k, entry);
-      for (const k of weak) if (!index.has(k)) index.set(k, entry);
-    }
-    for (const entry of entries) {
-      for (const alias of aliasKeysFor(entry.data)) {
-        if (!index.has(alias)) index.set(alias, entry);
-      }
-    }
-    return index;
+  function indexWithAliases(files: Array<{ path: string; aliases?: unknown }>): VaultIndex {
+    return buildIndexFromEntries(files.map((f) => ({ path: f.path, data: f.aliases === undefined ? {} : { aliases: f.aliases } })));
   }
 
   const body = (link: string) => `---\ntype_key: page\n---\n\nsee ${link}\n`;
@@ -959,7 +944,7 @@ describe("wikilink resolution — alias-aware index", () => {
       { path: "b/Dup.md" },
       { path: "a/Alias.md", aliases: "Dup" },
     ]);
-    expect(index.get("Dup")!.path).toBe("b/Dup.md");
+    expect(resolveLink(index, "Dup")!.path).toBe("b/Dup.md");
   });
 
   test("an alias that matches nothing still errors — not a blanket pass", () => {

@@ -1,5 +1,5 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
-import { VIEW_TYPE_VAULT_RESULTS } from "./constants";
+import { VIEW_TYPE_VAULT_RESULTS } from "./plugin-settings";
 import type { ValidationResult, ValidationSummary } from "./types";
 import type ObsiValidatePlugin from "./plugin-main";
 

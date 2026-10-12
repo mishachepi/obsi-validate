@@ -1,16 +1,16 @@
 /**
  * mdbase as the shape engine for validateFile().
  *
- * Types are produced in memory by translate.ts and fed to mdbase's pure
- * `validateJsonSchemaFrontmatter()` — no Collection, no disk, no sql.js —
- * so the same engine can serve the CLI and, later, the plugin.
- * Diagnostics are mapped onto the existing ValidationError contract; all
- * bespoke rules stay in validate.ts untouched.
+ * Types are generated in memory by translate.ts and checked with mdbase's
+ * JSON-Schema validator (no Collection, no disk). Diagnostics are mapped onto
+ * ValidationError; every rule outside the shape stays in validate.ts. The
+ * CLI uses this engine by default; the plugin uses Zod.
  */
 import type { TypeDefinition } from "@callumalpass/mdbase";
 import { validateJsonSchemaFrontmatter } from "./json-schema.js";
 import type { ShapeEngine, ValidationError, VaultSchema } from "../types.js";
 import { translateSchema } from "./translate.js";
+import { isEmptyValue } from "../values.js";
 
 export function mdbaseShapeEngine(schema: VaultSchema, typeKeyField: string): ShapeEngine {
   const types = new Map(
@@ -36,7 +36,7 @@ export function mdbaseShapeEngine(schema: VaultSchema, typeKeyField: string): Sh
     //    landing in a `string` property stays a Date and fails on both engines.
     const frontmatter: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(data)) {
-      if (nullable.has(k) && (v === null || v === undefined || v === "")) frontmatter[k] = null;
+      if (nullable.has(k) && isEmptyValue(v)) frontmatter[k] = null;
       else frontmatter[k] = v instanceof Date && dateTyped.has(k) ? v.toISOString() : v;
     }
 

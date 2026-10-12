@@ -9,6 +9,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
+// The operator's own ~/.config/obsi-validate/config.json must not leak into tests.
+const CLI_ENV = { ...process.env, XDG_CONFIG_HOME: join(import.meta.dir, "fixtures", "no-config"), VAULT_DIR: "", SCHEMA_DIR: "" };
 const VAULT = join(import.meta.dir, "fixtures", "mini-vault");
 const SCHEMA = join(VAULT, "_system");
 
@@ -21,7 +23,7 @@ type Summary = {
 };
 
 function cli(...args: string[]) {
-  const p = Bun.spawnSync(["bun", join(ROOT, "src/cli.ts"), ...args], { cwd: ROOT });
+  const p = Bun.spawnSync(["bun", join(ROOT, "src/cli.ts"), ...args], { cwd: ROOT, env: CLI_ENV });
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
 }
 
@@ -141,6 +143,27 @@ describe("CLI single-file mode (how the vault hook calls it)", () => {
 
   test("unknown type_key → exit 1 (the hook blocks on invalid > 0)", () => {
     expect(one("notes/unknown-type.md").code).toBe(1);
+  });
+});
+
+describe("CLI without --vault-dir finds the vault itself", () => {
+  test("a single file: link checks and folder rules work (nearest folder with _system/entities)", () => {
+    // The fixture keeps its schema in _system/, so the vault root is discovered.
+    const r = runJson(join(VAULT, "tasks/good.md"), "--check-links");
+    expect(r.code).toBe(0);
+    expect(r.summary).toMatchObject({ total: 1, valid: 1 });
+  });
+
+  test("a sub-folder: links to notes outside it still resolve", () => {
+    const { summary } = runJson(join(VAULT, "tasks"), "--check-links");
+    const v = verdicts(summary);
+    expect(v["tasks/good.md"]).toBeUndefined();
+    expect(v["tasks/epic-points-at-area.md"]).toEqual([false, ["epic"], []]);
+  });
+
+  test("pretty output names a single file by its vault path", () => {
+    const r = cli(join(VAULT, "tasks/bad-enum.md"));
+    expect(r.out).toContain("FAIL tasks/bad-enum.md [task]");
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { walkMdFiles, walkLinkableFiles, walkSchemaFiles } from "../src/walk.js";
+import { walkValidationTargets, walkVaultFiles, walkSchemaFiles } from "../src/walk.js";
 
 /** Build a small on-disk tree under a fresh temp dir. `files` are
  * vault-relative paths; each gets minimal content so it's a real .md. */
@@ -27,16 +27,16 @@ async function tree(files: string[]): Promise<string> {
   return root;
 }
 
-describe("walkVaultFiles — fixed defaults (always on)", () => {
+describe("walks — fixed defaults (always on)", () => {
   test("dot-directories are skipped", async () => {
     const root = await tree([".hidden/Note.md", "Visible.md"]);
-    const paths = await walkMdFiles(root);
+    const paths = await walkValidationTargets(root);
     expect(paths.map((p) => p.replace(root + "/", ""))).toEqual(["Visible.md"]);
   });
 
   test("_archive and _skill are skipped even without any configured exclude", async () => {
     const root = await tree(["_archive/Old.md", "_skill/Prompt.md", "Real.md"]);
-    const paths = await walkMdFiles(root);
+    const paths = await walkValidationTargets(root);
     expect(paths.map((p) => p.replace(root + "/", ""))).toEqual(["Real.md"]);
   });
 });
@@ -57,29 +57,29 @@ describe("walkSchemaFiles — `_deprecated/` parity with the plugin", () => {
 
   test("vault walk (validation targets) is unaffected — notes under _deprecated/ still validate", async () => {
     const root = await tree(["_deprecated/note.md", "Real.md"]);
-    const paths = await walkMdFiles(root);
+    const paths = await walkValidationTargets(root);
     expect(paths.map((p) => p.replace(root + "/", "")).sort()).toEqual(
       ["_deprecated/note.md", "Real.md"].sort(),
     );
   });
 });
 
-describe("walkVaultFiles — configurable excludeDirs", () => {
+describe("walks — configurable excludeDirs", () => {
   test("an excluded directory is skipped in target mode", async () => {
     const root = await tree(["_templates/task-template.md", "tasks/real-task.md"]);
-    const paths = await walkMdFiles(root, new Set(["_templates"]));
+    const paths = await walkValidationTargets(root, new Set(["_templates"]));
     expect(paths.map((p) => p.replace(root + "/", ""))).toEqual(["tasks/real-task.md"]);
   });
 
   test("an excluded directory is also kept out of the link index (index mode)", async () => {
     const root = await tree(["_templates/task-template.md", "tasks/real-task.md"]);
-    const paths = await walkLinkableFiles(root, new Set(["_templates"]));
+    const paths = await walkVaultFiles(root, new Set(["_templates"]));
     expect(paths.map((p) => p.replace(root + "/", ""))).toEqual(["tasks/real-task.md"]);
   });
 
   test("no excludeDirs argument behaves exactly as before (defaults only)", async () => {
     const root = await tree(["_templates/task-template.md", "tasks/real-task.md"]);
-    const paths = await walkMdFiles(root);
+    const paths = await walkValidationTargets(root);
     expect(paths.map((p) => p.replace(root + "/", "")).sort()).toEqual(
       ["_templates/task-template.md", "tasks/real-task.md"].sort(),
     );
@@ -89,17 +89,26 @@ describe("walkVaultFiles — configurable excludeDirs", () => {
     // "templates" (no underscore) must not accidentally match "_templates",
     // and a file merely containing the excluded word must not be skipped.
     const root = await tree(["_templates/task-template.md", "not_templates_at_all/Note.md"]);
-    const paths = await walkMdFiles(root, new Set(["templates"]));
+    const paths = await walkValidationTargets(root, new Set(["templates"]));
     expect(paths.map((p) => p.replace(root + "/", "")).sort()).toEqual(
       ["_templates/task-template.md", "not_templates_at_all/Note.md"].sort(),
     );
   });
 
-  test("index mode still keeps _index.md and .canvas files outside excluded dirs", async () => {
+  test("the vault walk keeps every file outside excluded dirs, _index.md and canvases included", async () => {
     const root = await tree(["_templates/x.md", "_system/entities/_index.md"]);
     await writeFile(join(root, "arch.canvas"), "{}");
-    const paths = await walkLinkableFiles(root, new Set(["_templates"]));
+    const paths = await walkVaultFiles(root, new Set(["_templates"]));
     const rel = paths.map((p) => p.replace(root + "/", "")).sort();
     expect(rel).toEqual(["_system/entities/_index.md", "arch.canvas"]);
+  });
+});
+
+describe("walkVaultFiles — every file a link may point to", () => {
+  test("attachments and archived files are included; dot-folders are not", async () => {
+    const root = await buildTree(["_archive/old.md", "notes/a.md", ".obsidian/x.md"]);
+    await writeFile(join(root, "notes", "photo.png"), "");
+    const paths = await walkVaultFiles(root);
+    expect(paths.map((p) => p.replace(root + "/", "")).sort()).toEqual(["_archive/old.md", "notes/a.md", "notes/photo.png"]);
   });
 });

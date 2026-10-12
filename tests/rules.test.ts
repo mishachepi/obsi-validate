@@ -3,7 +3,8 @@ import { join } from "path";
 import { loadSchema } from "../src/schema.js";
 import { validateFile } from "../src/validate.js";
 import { mdbaseShapeEngine } from "../src/mdbase/adapter.js";
-import { ALWAYS_SKIPPED_DIRS, buildIndexFromEntries, isInSkippedDir, isValidationTarget } from "../src/link-index.js";
+import { buildIndexFromEntries, resolveLink } from "../src/link-index.js";
+import { ALWAYS_SKIPPED_DIRS, isInSkippedDir, isSchemaFile, isValidationTarget } from "../src/vault-files.js";
 import { findView } from "../src/view-lookup.js";
 import { assertSafeVaultPath } from "../src/vault-path.js";
 import { frontmatterBlock, parseFrontmatter } from "../src/frontmatter.js";
@@ -95,6 +96,12 @@ describe("folders skipped by both CLI and plugin", () => {
     expect(isInSkippedDir("drafts/x.md", new Set(["drafts"]))).toBe(true);
     expect(isInSkippedDir("drafts/x.md")).toBe(false);
   });
+  test("schema files: markdown outside _deprecated/ and skipped folders", () => {
+    expect(isSchemaFile("structure/task_entity.md")).toBe(true);
+    expect(isSchemaFile("_deprecated/old_entity.md")).toBe(false);
+    expect(isSchemaFile("_archive/old_entity.md")).toBe(false);
+    expect(isSchemaFile("_index.md")).toBe(false);
+  });
   test("validation targets: markdown except _index.md", () => {
     expect(isValidationTarget("a/b.md")).toBe(true);
     expect(isValidationTarget("a/_index.md")).toBe(false);
@@ -150,29 +157,30 @@ describe("frontmatterBlock", () => {
 
 describe("buildIndexFromEntries — one link index for CLI and plugin", () => {
   const e = (path: string, data: Record<string, unknown> = {}) => ({ path, data });
-  test("path keys, basename keys and canvas keys", () => {
+  test("notes resolve by path and name, canvases with their extension", () => {
     const idx = buildIndexFromEntries([e("a/Note.md"), e("boards/arch.canvas")]);
-    expect(idx.get("a/Note")?.path).toBe("a/Note.md");
-    expect(idx.get("Note")?.path).toBe("a/Note.md");
-    expect(idx.get("arch.canvas")?.path).toBe("boards/arch.canvas");
-    expect(idx.get("boards/arch.canvas")?.path).toBe("boards/arch.canvas");
+    expect(resolveLink(idx, "a/Note")?.path).toBe("a/Note.md");
+    expect(resolveLink(idx, "[[Note]]")?.path).toBe("a/Note.md");
+    expect(resolveLink(idx, "arch.canvas")?.path).toBe("boards/arch.canvas");
+    expect(resolveLink(idx, "boards/arch.canvas")?.path).toBe("boards/arch.canvas");
   });
-  test("an ambiguous basename goes to the shortest path, whatever the input order", () => {
+  test("an ambiguous name goes to the shallower note, whatever the input order", () => {
     const deep = e("x/y/Work.md"), shallow = e("areas/Work.md");
-    expect(buildIndexFromEntries([deep, shallow]).get("Work")).toBe(shallow);
-    expect(buildIndexFromEntries([shallow, deep]).get("Work")).toBe(shallow);
-    expect(buildIndexFromEntries([deep, shallow]).get("x/y/Work")).toBe(deep);
+    expect(resolveLink(buildIndexFromEntries([deep, shallow]), "Work")).toBe(shallow);
+    expect(resolveLink(buildIndexFromEntries([shallow, deep]), "Work")).toBe(shallow);
+    expect(resolveLink(buildIndexFromEntries([deep, shallow]), "x/y/Work")).toBe(deep);
   });
   test("an alias never shadows another note's own name", () => {
     const real = e("b/Plan.md"), other = e("a/Other.md", { aliases: ["Plan", "Roadmap"] });
     const idx = buildIndexFromEntries([other, real]);
-    expect(idx.get("Plan")).toBe(real);
-    expect(idx.get("Roadmap")).toBe(other);
+    expect(resolveLink(idx, "Plan")).toBe(real);
+    expect(resolveLink(idx, "roadmap")).toBe(other);
   });
   test("a note whose YAML did not parse is still a link target", () => {
-    expect(buildIndexFromEntries([e("notes/broken.md", {})]).has("broken")).toBe(true);
+    expect(resolveLink(buildIndexFromEntries([e("notes/broken.md")]), "broken")).toBeDefined();
   });
 });
+
 
 describe("assertSafeVaultPath — plugin writes stay inside the vault", () => {
   test.each(["_system/entities/task_entity.md", "a/v1..2 notes.md", "a/./b.md"])("allows %s", (p) => {

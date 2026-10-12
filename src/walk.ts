@@ -1,78 +1,39 @@
+/** Directory walks for the CLI, using the same file rules as the plugin (vault-files.ts). */
 import { readdir } from "fs/promises";
-import { join } from "path";
-import { ALWAYS_SKIPPED_DIRS, isLinkableFile, isValidationTarget } from "./link-index.js";
+import { join, relative } from "path";
+import { SCHEMA_SKIPPED_DIRS, isInSkippedDir, isOutsideVault, isSchemaFile, isValidationTarget } from "./vault-files.js";
 
-const EMPTY_EXCLUDES: ReadonlySet<string> = new Set();
-
-/** Walk directory recursively, skipping dot-directories.
- *
- * `mode` separates two different questions that must not share exclusions:
- *   "targets" — files to validate. `_index.md` is excluded deliberately.
- *   "index"   — files a wikilink may point AT. Excluding a real file here
- *               turns a valid link into a false "not found", so this mode
- *               keeps `_index.md` and also collects `.canvas` notes, which
- *               Obsidian links to like any other note.
- *
- * `excludeDirs` is user-configured (config `exclude_dirs` + CLI `--exclude`,
- * see config.ts) and is applied in BOTH modes — an excluded directory is
- * skipped for validation AND kept out of the link index, so it can neither
- * be flagged itself nor make a real link elsewhere read as broken by
- * shadowing a basename. It is additive on top of the fixed defaults below,
- * never a replacement for them.
- */
-export async function walkVaultFiles(
-  dir: string,
-  mode: "targets" | "index",
-  excludeDirs: ReadonlySet<string> = EMPTY_EXCLUDES,
-): Promise<string[]> {
-  const paths: string[] = [];
-
-  async function walk(d: string) {
-    const entries = await readdir(d, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue;
-      // Skip archive / shadow-override trees: their duplicate-basename notes
-      // would shadow canonical notes in the link index (first-wins). Fixed
-      // defaults — always on, independent of user-configured excludeDirs.
-      if (entry.isDirectory() && ALWAYS_SKIPPED_DIRS.has(entry.name)) continue;
-      if (entry.isDirectory() && excludeDirs.has(entry.name)) continue;
-      const fullPath = join(d, entry.name);
+/** Files under `root` whose root-relative path passes `keep`, without
+ * descending into folders for which `skipFolder` holds. */
+async function walk(root: string, keep: (path: string) => boolean, skipFolder: (path: string) => boolean): Promise<string[]> {
+  const found: string[] = [];
+  async function visit(dir: string) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      const rel = relative(root, full);
       if (entry.isDirectory()) {
-        await walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (mode === "targets") {
-        if (isValidationTarget(entry.name)) paths.push(fullPath);
-      } else if (isLinkableFile(entry.name)) {
-        paths.push(fullPath);
+        if (!skipFolder(join(rel, "_"))) await visit(full);
+      } else if (entry.isFile() && keep(rel)) {
+        found.push(full);
       }
     }
   }
-
-  await walk(dir);
-  return paths;
+  await visit(root);
+  return found;
 }
 
-/** Files to validate. */
-export async function walkMdFiles(dir: string, excludeDirs?: ReadonlySet<string>): Promise<string[]> {
-  return walkVaultFiles(dir, "targets", excludeDirs);
+/** Notes to validate: not under dot-folders, `_archive/`, `_skill/` or `exclude`
+ * (config `exclude_dirs` + `--exclude`). */
+export function walkValidationTargets(root: string, exclude?: ReadonlySet<string>): Promise<string[]> {
+  return walk(root, isValidationTarget, (p) => isInSkippedDir(p, exclude));
 }
 
-/** Directories skipped when loading SCHEMA files (entities / properties).
- * `_deprecated/` is where the plugin's Archive action parks retired
- * definitions; the plugin never loads it (bridge.ts `collectMdFiles`), so the
- * CLI must not either — otherwise a retired type keeps validating in hooks
- * and CI. This applies only to schema discovery: notes living under a
- * `_deprecated/` folder are still ordinary vault files for validation. */
-const SCHEMA_EXCLUDES: ReadonlySet<string> = new Set(["_deprecated"]);
-
-/** Schema definition files under an entities/ or properties/ dir. */
-export async function walkSchemaFiles(dir: string): Promise<string[]> {
-  return walkVaultFiles(dir, "targets", SCHEMA_EXCLUDES);
+/** Every file a wikilink may resolve to, archived ones included. */
+export function walkVaultFiles(root: string, exclude?: ReadonlySet<string>): Promise<string[]> {
+  return walk(root, () => true, (p) => isOutsideVault(p, exclude));
 }
 
-/** Files a wikilink may resolve to. */
-export async function walkLinkableFiles(dir: string, excludeDirs?: ReadonlySet<string>): Promise<string[]> {
-  return walkVaultFiles(dir, "index", excludeDirs);
+/** Schema definition files under an entities/ or properties/ folder. */
+export function walkSchemaFiles(root: string): Promise<string[]> {
+  return walk(root, isSchemaFile, (p) => isInSkippedDir(p, SCHEMA_SKIPPED_DIRS));
 }

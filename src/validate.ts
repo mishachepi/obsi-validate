@@ -1,115 +1,80 @@
-import { parseFrontmatter } from "./frontmatter.js";
+import { noteBody, parseFrontmatter } from "./frontmatter.js";
+import { parseWikilinkTarget, resolveLink } from "./link-index.js";
+import { TASK_ENTITY, validateTaskIntake } from "./rules/task-intake.js";
+import { DEFAULT_TYPE_KEY_FIELD, isSchemaDefinition } from "./schema.js";
 import type {
-  RawFile,
-  VaultSchema,
-  ValidateOptions,
-  VaultIndex,
   LinkConstraints,
-  ValidationResult,
-  ValidationSummary,
-  ValidationError,
+  RawFile,
   ResolvedProperty,
   ShapeEngine,
+  ValidateOptions,
+  ValidationError,
+  ValidationResult,
+  ValidationSummary,
+  VaultIndex,
+  VaultSchema,
 } from "./types.js";
-import { DEFAULT_ENTITY_FIELD, TASK_INTAKE_CUTOFF } from "./constants.js";
+import { asList, isEmptyValue } from "./values.js";
 
-/** Validate a single file's frontmatter against the vault schema */
-export function validateFile(
-  file: RawFile,
-  schema: VaultSchema,
-  options?: ValidateOptions,
-): ValidationResult {
-  const typeKeyField = options?.typeKeyField ?? DEFAULT_ENTITY_FIELD;
+/** Validate one note: YAML → type → expected folder → shape engine →
+ * custom validators and link constraints → task intake → (checkLinks) body
+ * wikilinks and inline properties. */
+export function validateFile(file: RawFile, schema: VaultSchema, options: ValidateOptions = {}): ValidationResult {
+  const typeKeyField = options.typeKeyField ?? DEFAULT_TYPE_KEY_FIELD;
+  const result = (entityType: string | null, errors: ValidationError[], warnings: ValidationError[]): ValidationResult => ({
+    file: file.path,
+    entityType,
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  });
 
   let data: Record<string, unknown>;
   try {
     data = parseFrontmatter(file.content).data;
   } catch (e) {
-    return {
-      file: file.path,
-      entityType: null,
-      valid: false,
-      errors: [
-        {
-          field: "_yaml",
-          message: `YAML parse error: ${e instanceof Error ? e.message : String(e)}`,
-        },
-      ],
-      warnings: [],
-    };
+    return result(null, [{ field: "_yaml", message: `YAML parse error: ${e instanceof Error ? e.message : String(e)}` }], []);
   }
-  // Skip schema definition files (entity/property declarations)
-  if (data.entity_name || data.property_name) {
-    return { file: file.path, entityType: null, valid: true, errors: [], warnings: [] };
+  if (isSchemaDefinition(data)) return result(null, [], []);
+
+  const ownType = isEmptyValue(data[typeKeyField]) ? undefined : data[typeKeyField];
+  if (ownType !== undefined && typeof ownType !== "string") {
+    return result(
+      null,
+      [{ field: typeKeyField, message: `${typeKeyField} must be a string, got ${Array.isArray(ownType) ? "list" : typeof ownType}`, received: ownType }],
+      [],
+    );
   }
 
-  const rawEntityType = data[typeKeyField];
-  const defaultType = options?.defaultEntityType;
+  const notePath = vaultRelative(file.path, options.vaultRoot);
+  const linkErrors = () =>
+    options.checkLinks && options.vaultIndex
+      ? [
+          ...validateBodyLinks(file.content, options.vaultIndex, notePath),
+          ...validateInlineProperties(file.content, schema, entityType ?? null, options.vaultIndex, typeKeyField, notePath),
+        ]
+      : [];
 
-  // Validate entity type field is a string (not array or object)
-  if (rawEntityType !== undefined && typeof rawEntityType !== "string") {
-    return {
-      file: file.path,
-      entityType: null,
-      valid: false,
-      errors: [
-        { field: typeKeyField, message: `${typeKeyField} must be a string, got ${typeof rawEntityType}`, received: rawEntityType },
-      ],
-      warnings: [],
-    };
-  }
-
-  const entityType = (rawEntityType as string | undefined) ?? defaultType ?? undefined;
-
+  const entityType = ownType ?? options.defaultEntityType;
   if (!entityType) {
-    // Still check body links even without entity type
-    const errors: ValidationError[] = [];
-    if (options?.checkLinks && options.vaultIndex) {
-      errors.push(...validateBodyLinks(file.content, options.vaultIndex));
-      errors.push(...validateInlineProperties(file.content, schema, null, options.vaultIndex, options.typeKeyField ?? DEFAULT_ENTITY_FIELD));
-    }
-    return {
-      file: file.path,
-      entityType: null,
-      valid: errors.length === 0,
-      errors,
-      warnings: [{ field: typeKeyField, message: `Missing ${typeKeyField}, skipped` }],
-    };
+    return result(null, linkErrors(), [{ field: typeKeyField, message: `Missing ${typeKeyField}, skipped` }]);
   }
 
   const warnings: ValidationError[] = [];
-
-  // Warn if using default entity type (not explicitly set)
-  if (!rawEntityType && defaultType) {
-    warnings.push({
-      field: typeKeyField,
-      message: `${typeKeyField} not set, using default "${defaultType}"`,
-    });
+  if (ownType === undefined) {
+    warnings.push({ field: typeKeyField, message: `${typeKeyField} not set, using default "${entityType}"` });
   }
 
-  const resolvedProps = schema.entityMap.get(entityType);
-  if (!resolvedProps) {
-    // An unknown type is an error, not a warning: a typo or undeclared type must
-    // fail every caller (hook, CI, manual run) the same way.
-    return {
-      file: file.path,
-      entityType,
-      valid: false,
-      errors: [
-        { field: typeKeyField, message: `Unknown entity type: ${entityType}` },
-      ],
-      warnings,
-    };
+  const props = schema.entityMap.get(entityType);
+  if (!props) {
+    // An error, not a warning: a typo or undeclared type must fail every caller.
+    return result(entityType, [{ field: typeKeyField, message: `Unknown entity type: ${entityType}` }], warnings);
   }
 
   const errors: ValidationError[] = [];
 
-  // Check expected folder constraint
-  const expectedFolderRaw = schema.expectedFolderMap.get(entityType);
-  const expectedFolder = expectedFolderRaw?.replace(/[/\\]+$/, "");
-  const root = options?.vaultRoot?.replace(/[/\\]+$/, "");
-  const vaultPath = root && file.path.startsWith(root + "/") ? file.path.slice(root.length + 1) : file.path;
-  if (expectedFolder && !vaultPath.startsWith(expectedFolder + "/")) {
+  const expectedFolder = schema.expectedFolderMap.get(entityType)?.replace(/[/\\]+$/, "");
+  if (expectedFolder && !notePath.startsWith(expectedFolder + "/")) {
     errors.push({
       field: "__path__",
       message: `File must be in folder "${expectedFolder}/"`,
@@ -118,563 +83,246 @@ export function validateFile(
     });
   }
 
-  // Shape half — pluggable engine (Zod by default, mdbase via options).
-  // A defaulted type counts as the note's type_key; otherwise every untyped
-  // note would fail "type_key is required" under its own default.
-  const shapeData = rawEntityType === undefined ? { ...data, [typeKeyField]: entityType } : data;
-  const shape = (options?.shapeEngine ?? zodShapeEngine)(shapeData, entityType, schema, typeKeyField);
+  // A defaulted type counts as the note's type field, so the default's own
+  // `type_key: {required: true}` does not fail every untyped note.
+  const shapeData = ownType === undefined ? { ...data, [typeKeyField]: entityType } : data;
+  const shape = (options.shapeEngine ?? zodShapeEngine)(shapeData, entityType, schema, typeKeyField);
   errors.push(...shape.errors);
   warnings.push(...shape.warnings);
 
-  // Bespoke per-field rules — identical on every engine
-  const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
+  const propByName = new Map(props.map((p) => [p.name, p]));
   for (const [field, value] of Object.entries(data)) {
-    if (field === typeKeyField) continue;
-    const prop = propByName.get(field);
-    if (!prop || !prop.validator) continue;
-    if (prop.nullable && (value === null || value === undefined || value === "")) continue;
+    const prop = field === typeKeyField ? undefined : propByName.get(field);
+    if (!prop || (prop.nullable && isEmptyValue(value))) continue;
 
-    // Custom post-validator (JS expression from vault YAML, receives `value`)
-    // This is intentionally user-defined code from the vault owner's own schema files.
-    // It runs in the same trust context as the vault itself — no untrusted input.
-    if (prop.custom_validator) {
-      try {
-        // eslint-disable-next-line no-new-func
-        const fn = new Function("value", `return (${prop.custom_validator})`);
-        const customResult = fn(value);
-        if (customResult === false) {
-          errors.push({
-            field,
-            message: `Custom validation failed`,
-            received: value,
-          });
-        } else if (typeof customResult === "string") {
-          errors.push({
-            field,
-            message: customResult,
-            received: value,
-          });
-        }
-      } catch (e) {
-        warnings.push({
-          field,
-          message: `Custom validator error: ${e instanceof Error ? e.message : String(e)}`,
-        });
-      }
+    if (prop.customCheck) {
+      const outcome = runCustomCheck(prop, value);
+      if (outcome.error) errors.push({ field, message: outcome.error, received: value });
+      if (outcome.warning) warnings.push({ field, message: outcome.warning });
     }
 
-    // Link constraint validation
-    if (prop.link_constraints && options?.vaultIndex) {
-      const linkValues = Array.isArray(value) ? value : [value];
-      for (const linkVal of linkValues) {
-        const linkErrors = validateLinkTarget(
-          String(linkVal),
-          prop.link_constraints,
-          options.vaultIndex,
-          options.typeKeyField ?? DEFAULT_ENTITY_FIELD,
-        );
-        for (const msg of linkErrors) {
-          errors.push({ field, message: msg, received: linkVal });
+    if (prop.link_constraints && options.vaultIndex) {
+      for (const link of asList(value)) {
+        for (const message of validateLinkTarget(String(link), prop.link_constraints, options.vaultIndex, typeKeyField, notePath)) {
+          errors.push({ field, message, received: link });
         }
       }
     }
   }
 
-  // Task-intake detector: new tasks must follow the obsi-tasks creation canon
-  if (entityType === "task") {
-    errors.push(...validateTaskIntake(file.content, data));
+  if (entityType === TASK_ENTITY) errors.push(...validateTaskIntake(file.content, data));
+  errors.push(...linkErrors());
+
+  return result(entityType, errors, warnings);
+}
+
+/** Path relative to the vault root, when the caller passed absolute paths. */
+function vaultRelative(path: string, vaultRoot?: string): string {
+  const root = vaultRoot?.replace(/[/\\]+$/, "");
+  return root && path.startsWith(root + "/") ? path.slice(root.length + 1) : path;
+}
+
+/** Run a property's custom validator. It returns true to pass, false or a
+ * message to fail; a thrown error is reported as a warning. */
+function runCustomCheck(prop: ResolvedProperty, value: unknown): { error?: string; warning?: string } {
+  try {
+    const outcome = prop.customCheck!(value);
+    if (outcome === false) return { error: "Custom validation failed" };
+    if (typeof outcome === "string") return { error: outcome };
+    return {};
+  } catch (e) {
+    return { warning: `Custom validator error: ${e instanceof Error ? e.message : String(e)}` };
   }
-
-  // Body link and inline property validation
-  if (options?.checkLinks && options.vaultIndex) {
-    const bodyLinkErrors = validateBodyLinks(file.content, options.vaultIndex);
-    errors.push(...bodyLinkErrors);
-
-    const inlineErrors = validateInlineProperties(
-      file.content,
-      schema,
-      entityType,
-      options.vaultIndex,
-      options.typeKeyField ?? DEFAULT_ENTITY_FIELD,
-    );
-    errors.push(...inlineErrors);
-  }
-
-  return {
-    file: file.path,
-    entityType,
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
 }
 
 /** Default shape engine: per-property Zod validators from schema.ts. */
 export const zodShapeEngine: ShapeEngine = (data, entityType, schema, typeKeyField) => {
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
-  const resolvedProps = schema.entityMap.get(entityType) ?? [];
-  const propByName = new Map(resolvedProps.map((p) => [p.name, p]));
+  const props = schema.entityMap.get(entityType) ?? [];
+  const propByName = new Map(props.map((p) => [p.name, p]));
   const allowExtra = schema.allowExtraMap.get(entityType) ?? false;
-  const propertyPatterns = schema.propertyPatternMap?.get(entityType) ?? [];
+  const patterns = schema.propertyPatternMap.get(entityType) ?? [];
 
   for (const [field, value] of Object.entries(data)) {
     if (field === typeKeyField) continue;
     const prop = propByName.get(field);
-
     if (!prop) {
-      // Order matters: exact name → declared key family → entity-wide escape.
-      // Patterns sit here so a generated key (time_<area>, <cat>_hours) is
-      // accepted without switching the whole entity to allow_extra, which would
-      // stop catching genuinely unknown fields — the thing this check is for.
-      const matchesFamily = propertyPatterns.some((re) => re.test(field));
-      if (!matchesFamily && !allowExtra) {
+      // A declared key family (property_patterns) is known without being listed.
+      if (!allowExtra && !patterns.some((re) => re.test(field))) {
         warnings.push({ field, message: "Unknown property for this entity" });
       }
       continue;
     }
-
-    // No property file → no validator → skip value validation (field is still recognized)
-    if (!prop.validator) continue;
-
-    // Nullable properties accept null/undefined/empty string
-    if (prop.nullable && (value === null || value === undefined || value === "")) continue;
-
-    const result = prop.validator.safeParse(value);
-    if (!result.success) {
-      for (const issue of result.error.issues) {
+    if (!prop.validator || (prop.nullable && isEmptyValue(value))) continue;
+    const parsed = prop.validator.safeParse(value);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
         errors.push({ field, message: issue.message, expected: prop.property_type, received: value });
       }
     }
   }
 
-  for (const prop of resolvedProps) {
-    if (isExemptFromRequired(prop, data)) continue;
-    if (prop.required && !(prop.name in data)) {
+  for (const prop of props) {
+    if (prop.required && !(prop.name in data) && !isExemptFromRequired(prop, data)) {
       errors.push({ field: prop.name, message: "Required field is missing" });
     }
   }
-
   return { errors, warnings };
 };
 
-const INTAKE_HINT =
-  "new tasks are created only via the obsi-tasks skill (tasknotes:capture + fm set), see _claude/skills/obsi-tasks";
-
-/** Extract the raw (unparsed) text of a top-level frontmatter scalar value.
- * Needed because YAML parses both `2026-08-18` and a full ISO timestamp into
- * Date objects, erasing whether the author wrote a time component. */
-function rawFrontmatterValue(content: string, key: string): string | null {
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!fmMatch) return null;
-  const line = fmMatch[1].match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"));
-  if (!line) return null;
-  return line[1].trim().replace(/^["']|["']$/g, "") || null;
+/** True when a `required_unless` condition lifts the requirement: ANY listed
+ * field holds ANY of its listed values. Only a single value can match (a list
+ * never does); numbers compare by their string form. */
+export function isExemptFromRequired(prop: Pick<ResolvedProperty, "required_unless">, data: Record<string, unknown>): boolean {
+  return Object.entries(prop.required_unless ?? {}).some(([field, values]) => {
+    const actual = data[field];
+    return (typeof actual === "string" || typeof actual === "number") && values.includes(String(actual));
+  });
 }
 
-/** Normalize a link-ish frontmatter value to a list of non-empty items.
- * Mirrors the vault-wide scalar tolerance: a single string counts as a
- * one-item list; null/undefined/"" count as empty. */
-function asItems(value: unknown): unknown[] {
-  if (value === null || value === undefined || value === "") return [];
-  const arr = Array.isArray(value) ? value : [value];
-  return arr.filter((v) => v !== null && v !== undefined && v !== "");
-}
-
-/**
- * Handwritten-task detector. For tasks with `created` >= TASK_INTAKE_CUTOFF:
- *   1. `created` must be a full ISO timestamp with time — only the capture
- *      tool writes that shape;
- *   2. `created_by` must hold exactly one author link;
- *   3. `epic` or `area` must be non-empty.
- * Every error points to the task-creation tool.
- * Tasks created before the cutoff, or with no parseable `created`, are exempt:
- * many older tasks have no `created` at all. A new task that omits `created`
- * escapes the detector; `created: {required: true}` on the task entity closes
- * that gap.
- */
-export function validateTaskIntake(
-  content: string,
-  data: Record<string, unknown>,
-): ValidationError[] {
-  const created = data["created"];
-  let createdDate: Date | null = null;
-  if (created instanceof Date) {
-    createdDate = created;
-  } else if (typeof created === "string") {
-    const d = new Date(created);
-    if (!Number.isNaN(d.getTime())) createdDate = d;
-  }
-  if (!createdDate || createdDate.getTime() < TASK_INTAKE_CUTOFF.getTime()) {
-    return []; // legacy task (pre-cutoff or no parseable created) — grandfathered
-  }
-
-  const errors: ValidationError[] = [];
-
-  // 1. ISO timestamp with time, checked against the raw text (YAML turns
-  // both date-only and full timestamps into Date objects).
-  const rawCreated = rawFrontmatterValue(content, "created");
-  if (!rawCreated || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawCreated)) {
-    errors.push({
-      field: "created",
-      message: `created must be a full ISO timestamp with time — ${INTAKE_HINT}`,
-      received: rawCreated,
-    });
-  }
-
-  // 2. created_by — exactly one author link
-  const createdBy = asItems(data["created_by"]);
-  if (createdBy.length !== 1) {
-    errors.push({
-      field: "created_by",
-      message: `created_by is required for new tasks (exactly one author link: [[agent-<slug>]] or [[Mikhail Chepkin]]) — ${INTAKE_HINT}`,
-      received: data["created_by"] ?? null,
-    });
-  }
-
-  // 3. epic or area — a task anchored to neither is rejected.
-  const epic = asItems(data["epic"]);
-  const area = asItems(data["area"]);
-  if (epic.length === 0 && area.length === 0) {
-    errors.push({
-      field: "epic",
-      message: `epic or area is required for new tasks (area-only anchor is legal — no natural epic → ask the user before creating) — ${INTAKE_HINT}`,
-      received: data["epic"] ?? null,
-    });
-  }
-
-  return errors;
-}
-
-/** Extract body content (everything after frontmatter).
- * HTML comments are stripped so wikilinks/inline-props inside `<!-- ... -->`
- * (e.g. stale `<!-- Schema: [[components/entities/area]] -->` footers) are not
- * validated as live links. */
-function extractBody(content: string): string {
-  let body = content;
-  const firstSep = content.indexOf("---");
-  if (firstSep !== -1) {
-    const secondSep = content.indexOf("---", firstSep + 3);
-    if (secondSep !== -1) body = content.slice(secondSep + 3);
-  }
-  // Strip regions whose wikilinks/inline-props are illustrative, not live:
-  //  - HTML comments (e.g. stale `<!-- Schema: [[...]] -->` footers)
-  //  - fenced code blocks (``` … ```) — markdown examples of link syntax
-  //  - inline code (`…`) — same, single-line
-  return body
+/** Note body with regions whose links are examples, not live links, removed:
+ * HTML comments, fenced code blocks and inline code. */
+function linkableBody(content: string): string {
+  return noteBody(content)
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/```[\s\S]*?```/g, "")
     .replace(/`[^`\r\n]+`/g, "");
 }
 
-/** Validate body wikilinks exist in vault index */
-export function validateBodyLinks(
-  content: string,
-  index: VaultIndex,
-): ValidationError[] {
-  const body = extractBody(content);
+/** Errors for body wikilinks that resolve to no file. Each target is reported
+ * once. `fromPath` is the note's own vault path. */
+export function validateBodyLinks(content: string, index: VaultIndex, fromPath?: string): ValidationError[] {
   const errors: ValidationError[] = [];
-  // Forbid newlines and `[` inside the target so an unclosed `[[...` cannot
-  // swallow table-cell pipes or following content as a fake alias.
-  const linkRegex = /\[\[([^\]\[\r\n]+)\]\]/g;
   const seen = new Set<string>();
-  let match: RegExpExecArray | null;
-  while ((match = linkRegex.exec(body)) !== null) {
-    const raw = match[1];
-    // Table cells escape the alias pipe as `\|` (valid Obsidian syntax); normalize
-    // it so the alias split below doesn't leave the escape backslash on the target.
-    let target = raw.replace(/\\\|/g, "|");
-    const pipe = target.indexOf("|");
-    if (pipe >= 0) target = target.slice(0, pipe);
-    const hash = target.indexOf("#");
-    if (hash >= 0) target = target.slice(0, hash);
-    target = target.trim();
-    if (!target || seen.has(target)) continue;
-    seen.add(target);
-
-    // Skip wikilinks to non-markdown attachments (pdf, images, audio, etc.)
-    // The vault index only contains .md notes.
-    if (isAttachmentLink(target)) continue;
-
-    const entry = index.get(target) ?? index.get(target.split("/").pop()!);
-    if (!entry) {
-      errors.push({
-        field: "__body_link__",
-        message: `Broken wikilink: [[${target}]] not found in vault`,
-        received: target,
-      });
+  // No newline or `[` inside a target, so an unclosed `[[` cannot swallow what follows.
+  for (const match of linkableBody(content).matchAll(/\[\[([^\]\[\r\n]+)\]\]/g)) {
+    const target = parseWikilinkTarget(match[1]);
+    const key = target.toLowerCase();
+    if (!target || seen.has(key)) continue;
+    seen.add(key);
+    if (!resolveLink(index, target, fromPath)) {
+      errors.push({ field: "__body_link__", message: `Broken wikilink: [[${target}]] not found in vault`, received: target });
     }
   }
   return errors;
 }
 
-/** Coerce a raw inline Dataview value (always a string) to the type declared
- * by its property schema, mirroring how Obsidian/Dataview interpret inline
- * fields. List/links → split into an array; number/boolean → coerce when the
- * literal is unambiguous, otherwise leave as-is so real errors still surface. */
-function coerceInlineValue(
-  rawValue: string,
-  linkMatch: RegExpMatchArray | null,
-  propertyType: string,
-): unknown {
-  const scalarValue = linkMatch ? `[[${linkMatch[1]}]]` : rawValue;
+/** An inline value (always text) as the property's declared type: lists are
+ * split on commas; numbers and booleans are converted only when the text is
+ * unambiguous, so malformed values still fail. */
+function coerceInlineValue(raw: string, propertyType: string): unknown {
   switch (propertyType) {
     case "list":
     case "links":
-      return rawValue
-        .split(/\s*,\s*/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    case "number": {
-      // Coerce numeric literals only; leave non-numeric strings to fail loudly.
-      if (rawValue !== "" && Number.isFinite(Number(rawValue))) {
-        return Number(rawValue);
-      }
-      return scalarValue;
-    }
-    case "boolean": {
-      if (rawValue === "true") return true;
-      if (rawValue === "false") return false;
-      return scalarValue;
-    }
+      return raw.split(",").map((s) => s.trim()).filter(Boolean);
+    case "number":
+      return raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : raw;
+    case "boolean":
+      return raw === "true" ? true : raw === "false" ? false : raw;
     default:
-      return scalarValue;
+      return raw;
   }
 }
 
-/** True if wikilink target points to an attachment (non-md file). */
-function isAttachmentLink(target: string): boolean {
-  const m = target.match(/\.([a-z0-9]{1,5})$/i);
-  if (!m) return false;
-  const ext = m[1].toLowerCase();
-  return ext !== "md";
-}
-
-/** Validate inline Dataview properties [key::value] in body */
+/** Errors for inline `[key:: value]` properties in the body: values are
+ * mapped through `etl.value_map`, coerced and checked against the property;
+ * wikilink values must resolve and meet the property's link constraints. */
 export function validateInlineProperties(
   content: string,
   schema: VaultSchema,
   entityType: string | null,
   index: VaultIndex,
   typeKeyField: string,
+  fromPath?: string,
 ): ValidationError[] {
-  const body = extractBody(content);
   const errors: ValidationError[] = [];
-  const inlineRegex = /\[([a-z_][a-z0-9_]*)::((?:\[\[[^\[\]\r\n]+\]\]|[^\]\r\n])*)\]/gi;
-  let match: RegExpExecArray | null;
-  while ((match = inlineRegex.exec(body)) !== null) {
+  const props = entityType ? schema.entityMap.get(entityType) ?? [] : [];
+  const inline = /\[([a-z_][a-z0-9_]*)::((?:\[\[[^\[\]\r\n]+\]\]|[^\]\r\n])*)\]/gi;
+
+  for (const match of linkableBody(content).matchAll(inline)) {
     const key = match[1];
-    const rawValue = match[2].trim();
-
-    const linkMatch = rawValue.match(/^\[\[([^\]\[\r\n]+)\]\]$/);
-
-    // Try to find property in schema for this entity type
-    let prop: ResolvedProperty | undefined;
-    if (entityType) {
-      const resolvedProps = schema.entityMap.get(entityType);
-      if (resolvedProps) {
-        prop = resolvedProps.find((p) => p.name === key);
-      }
-    }
+    const raw = match[2].trim();
+    const field = `__inline__${key}`;
+    const isLink = /^\[\[[^\]\[\r\n]+\]\]$/.test(raw);
+    const prop = props.find((p) => p.name === key);
 
     if (prop) {
-      // Inline Dataview notation always yields a string. Coerce it to match the
-      // property's declared type so number/boolean metrics like `[walk::8000]`
-      // or `[done::true]` don't report spurious "expected number/boolean,
-      // received string" errors. Non-coercible values fall through unchanged so
-      // genuinely malformed input still surfaces a real error.
-      // Apply the property's own etl.value_map first — the same fold `fm` does
-      // when computing frontmatter. Without it a controlled vocabulary
-      // (`[mood::good]`) is type-checked as the raw word against
-      // `property_type: number` and fails on data that is correct end-to-end.
-      // An unmapped word falls through unchanged, so a genuine typo
-      // (`[mood::gooood]`) still surfaces.
-      const mapped =
-        prop.value_map && Object.prototype.hasOwnProperty.call(prop.value_map, rawValue)
-          ? prop.value_map[rawValue]
-          : undefined;
-      const value =
-        mapped !== undefined
-          ? mapped
-          : coerceInlineValue(rawValue, linkMatch, prop.property_type);
-      if (prop.validator) {
-        const result = prop.validator.safeParse(value);
-        if (!result.success) {
-          for (const issue of result.error.issues) {
-            errors.push({
-              field: `__inline__${key}`,
-              message: `Inline [${key}::${rawValue}]: ${issue.message}`,
-              received: value,
-            });
-          }
-        }
+      const mapped = prop.value_map && Object.prototype.hasOwnProperty.call(prop.value_map, raw) ? prop.value_map[raw] : undefined;
+      const value = mapped ?? (isLink ? raw : coerceInlineValue(raw, prop.property_type));
+      const parsed = prop.validator?.safeParse(value);
+      for (const issue of parsed && !parsed.success ? parsed.error.issues : []) {
+        errors.push({ field, message: `Inline [${key}::${raw}]: ${issue.message}`, received: value });
       }
-      if (prop.link_constraints && linkMatch) {
-        const linkErrors = validateLinkTarget(
-          `[[${linkMatch[1]}]]`,
-          prop.link_constraints,
-          index,
-          typeKeyField,
-        );
-        for (const msg of linkErrors) {
-          errors.push({
-            field: `__inline__${key}`,
-            message: `Inline [${key}::${rawValue}]: ${msg}`,
-            received: rawValue,
-          });
+      if (prop.link_constraints && isLink) {
+        for (const message of validateLinkTarget(raw, prop.link_constraints, index, typeKeyField, fromPath)) {
+          errors.push({ field, message: `Inline [${key}::${raw}]: ${message}`, received: raw });
         }
       }
     }
 
-    // For any wikilink value, check existence
-    if (linkMatch) {
-      let target = linkMatch[1];
-      const pipe = target.indexOf("|");
-      if (pipe >= 0) target = target.slice(0, pipe);
-      const hash = target.indexOf("#");
-      if (hash >= 0) target = target.slice(0, hash);
-      target = target.trim();
-      if (target && !isAttachmentLink(target)) {
-        const entry = index.get(target) ?? index.get(target.split("/").pop()!);
-        if (!entry) {
-          errors.push({
-            field: `__inline__${key}`,
-            message: `Inline [${key}::[[${target}]]]: linked note not found in vault`,
-            received: target,
-          });
-        }
+    if (isLink) {
+      const target = parseWikilinkTarget(raw);
+      if (target && !resolveLink(index, target, fromPath)) {
+        errors.push({ field, message: `Inline [${key}::[[${target}]]]: linked note not found in vault`, received: target });
       }
     }
   }
   return errors;
 }
 
-/** Validate multiple files, return summary */
-export function validateFiles(
-  files: RawFile[],
-  schema: VaultSchema,
-  options?: ValidateOptions,
-): ValidationSummary {
-  const results: ValidationResult[] = [];
-  let valid = 0;
-  let invalid = 0;
-  let skipped = 0;
+/** Add one result to a summary's counters: no type and no errors = skipped. */
+export function countResult(summary: Omit<ValidationSummary, "results">, result: ValidationResult): void {
+  summary.total++;
+  if (result.entityType === null && result.valid) summary.skipped++;
+  else if (result.valid) summary.valid++;
+  else summary.invalid++;
+}
 
+/** Validate many files; every result is kept. */
+export function validateFiles(files: RawFile[], schema: VaultSchema, options?: ValidateOptions): ValidationSummary {
+  const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
   for (const file of files) {
     const result = validateFile(file, schema, options);
-    results.push(result);
-
-    if (result.entityType === null && result.valid) {
-      skipped++;
-    } else if (result.valid) {
-      valid++;
-    } else {
-      invalid++;
-    }
+    countResult(summary, result);
+    summary.results.push(result);
   }
-
-  return {
-    total: files.length,
-    valid,
-    invalid,
-    skipped,
-    results,
-  };
+  return summary;
 }
 
-/** Normalize a wikilink value: strip [[]], !embed prefix, aliases, heading refs */
-function normalizeLink(val: string): string {
-  let s = val.trim();
-  // Remove embed prefix
-  if (s.startsWith("![[")) s = s.slice(1);
-  if (s.startsWith("[[") && s.endsWith("]]")) {
-    s = s.slice(2, -2);
-  }
-  // Handle [[path/Name|Alias]] → path/Name
-  const pipe = s.indexOf("|");
-  if (pipe >= 0) s = s.slice(0, pipe);
-  // Handle [[Note#Heading]] → Note
-  const hash = s.indexOf("#");
-  if (hash >= 0) s = s.slice(0, hash);
-  return s.trim();
-}
-
-/** Validate a single link target against constraints */
+/** Errors for a link that does not resolve or whose target breaks the constraints. */
 function validateLinkTarget(
-  rawLink: string,
+  link: string,
   constraints: LinkConstraints,
   index: VaultIndex,
   typeKeyField: string,
+  fromPath?: string,
 ): string[] {
-  const linkName = normalizeLink(rawLink);
-  if (!linkName) return [];
-
-  const entry = index.get(linkName) ?? index.get(linkName.split("/").pop()!);
-  if (!entry) {
-    return [`Linked note "${linkName}" not found in vault`];
-  }
+  const name = parseWikilinkTarget(link);
+  if (!name) return [];
+  const target = resolveLink(index, name, fromPath);
+  if (!target) return [`Linked note "${name}" not found in vault`];
 
   const errors: string[] = [];
-
   if (constraints.target_type_key) {
-    const actual = entry.data[typeKeyField] as string | undefined;
-    const allowed = Array.isArray(constraints.target_type_key)
-      ? constraints.target_type_key
-      : [constraints.target_type_key];
-    if (!actual || !allowed.includes(actual)) {
-      errors.push(
-        `Linked "${linkName}" has ${typeKeyField}="${actual ?? "none"}", expected one of: ${allowed.join(", ")}`,
-      );
+    const actual = target.data[typeKeyField];
+    const allowed = asList(constraints.target_type_key).map(String);
+    if (typeof actual !== "string" || !allowed.includes(actual)) {
+      errors.push(`Linked "${name}" has ${typeKeyField}="${actual ?? "none"}", expected one of: ${allowed.join(", ")}`);
     }
   }
-
-  if (constraints.target_folder) {
-    if (!entry.path.startsWith(constraints.target_folder)) {
-      errors.push(
-        `Linked "${linkName}" is not in folder "${constraints.target_folder}"`,
-      );
-    }
+  if (constraints.target_folder && !target.path.startsWith(constraints.target_folder)) {
+    errors.push(`Linked "${name}" is not in folder "${constraints.target_folder}"`);
   }
-
-  if (constraints.target_has_property) {
-    if (!(constraints.target_has_property in entry.data)) {
-      errors.push(
-        `Linked "${linkName}" is missing property "${constraints.target_has_property}"`,
-      );
-    }
+  if (constraints.target_has_property && !(constraints.target_has_property in target.data)) {
+    errors.push(`Linked "${name}" is missing property "${constraints.target_has_property}"`);
   }
-
   if (constraints.target_property_value) {
     const { property, value } = constraints.target_property_value;
-    const actual = entry.data[property];
+    const actual = target.data[property];
     if (String(actual) !== String(value)) {
-      errors.push(
-        `Linked "${linkName}" has ${property}="${actual ?? "none"}", expected "${value}"`,
-      );
+      errors.push(`Linked "${name}" has ${property}="${actual ?? "none"}", expected "${value}"`);
     }
   }
-
   return errors;
-}
-
-
-/**
- * True when a `required_unless` condition lifts the requirement for this note.
- *
- * Exempt if ANY listed field holds ANY of its listed values, compared as exact
- * strings. A missing condition field does NOT exempt: absence is not a value,
- * and treating it as one would excuse the very notes the rule targets.
- */
-function isExemptFromRequired(
-  prop: { required_unless?: Record<string, string[]> },
-  data: Record<string, unknown>,
-): boolean {
-  const cond = prop.required_unless;
-  if (!cond) return false;
-  return Object.entries(cond).some(([field, values]) => {
-    if (!(field in data)) return false;
-    const actual = data[field];
-    if (actual === null || actual === undefined) return false;
-    return values.includes(String(actual));
-  });
 }

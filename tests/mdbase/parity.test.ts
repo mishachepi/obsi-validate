@@ -11,14 +11,15 @@
 import { describe, test, expect, afterAll } from "bun:test";
 import { validateFile } from "../../src/validate.js";
 import { mdbaseShapeEngine } from "../../src/mdbase/adapter.js";
-import type { ValidateOptions, VaultIndex } from "../../src/types.js";
+import type { ValidateOptions } from "../../src/types.js";
+import { buildIndexFromEntries } from "../../src/link-index.js";
 import { fixtureSchema } from "./fixture.js";
 
 const schema = fixtureSchema();
 const mdbase = mdbaseShapeEngine(schema, "type_key");
-const index: VaultIndex = new Map([
-  ["E1", { path: "epics/E1.md", data: { type_key: "epic" } }],
-  ["P1", { path: "pages/P1.md", data: { type_key: "page" } }],
+const index = buildIndexFromEntries([
+  { path: "epics/E1.md", data: { type_key: "epic" } },
+  { path: "pages/P1.md", data: { type_key: "page" } },
 ]);
 
 type Case = { category: string; name: string; path?: string; fm: string; expectValid: boolean };
@@ -61,6 +62,12 @@ const cases: Case[] = [
   // `dod` is `any` here, so null is a legal value; the point is that the KEY
   // being present satisfies `required` on both engines (the _templates/Task.md case).
   { category: "required_unless", name: "dod: null keeps the key (template case)", fm: "type_key: task\nstatus: Backlog\ncreated: 2026-01-05\ndod: null\n", expectValid: true },
+  { category: "emoji", name: "emoji passes", fm: 'type_key: card\npriority: 1\nicon: "😀"\n', expectValid: true },
+  { category: "emoji", name: "text is not an emoji", fm: "type_key: card\npriority: 1\nicon: abc\n", expectValid: false },
+  { category: "required_unless", name: "required: false switches the rule off", fm: "type_key: card\npriority: 2\nestimate: 5\n", expectValid: true },
+  { category: "required_unless", name: "numeric condition matches a number", fm: "type_key: card\npriority: 1\n", expectValid: true },
+  { category: "required_unless", name: "numeric condition, other value: required", fm: "type_key: card\npriority: 2\n", expectValid: false },
+  { category: "required_unless", name: "a list never matches the condition", fm: "type_key: task\nstatus: [Closed]\ncreated: 2026-01-05\n", expectValid: false },
   { category: "link_constraints (bespoke)", name: "target has right type", fm: T + 'epic: "[[E1]]"\n', expectValid: true },
   { category: "link_constraints (bespoke)", name: "target has wrong type", fm: T + 'epic: "[[P1]]"\n', expectValid: false },
   { category: "link_constraints (bespoke)", name: "target missing", fm: T + 'epic: "[[Nope]]"\n', expectValid: false },

@@ -1,81 +1,162 @@
 /**
- * The plugin's bridge (Obsidian vault → validator), run against the same
- * mini vault as tests/cli.test.ts. The plugin and the CLI must agree on every
- * frontmatter verdict; the plugin does not check body links by design.
+ * The plugin's bridge, run against a copy of tests/fixtures/mini-vault (the
+ * same vault as tests/cli.test.ts). With link checks on, the plugin must give
+ * exactly the CLI's verdicts. Schema writes must keep what the editor does not
+ * edit.
  */
-import { describe, test, expect, mock } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
-import { fakeApp, obsidianModule } from "./obsidian-mock.js";
+import { copyTree, fakeApp, obsidianModule } from "./obsidian-mock.js";
 
 mock.module("obsidian", () => obsidianModule);
-const { ensureSchema, bridgeValidateVault, bridgeValidateFile, buildVaultIndex } = await import("../../src/bridge.js");
+const bridge = await import("../../src/bridge.js");
+const { resolveTypeKeyField } = await import("../../src/schema.js");
 
 const ROOT = join(import.meta.dir, "..", "..");
-const VAULT = join(import.meta.dir, "..", "fixtures", "mini-vault");
-const app = fakeApp(VAULT) as any;
-const schema = await ensureSchema(app, "_system", null);
-const opts = { typeKeyField: "type_key" };
+const CLI_ENV = { ...process.env, XDG_CONFIG_HOME: join(import.meta.dir, "..", "fixtures", "no-config"), VAULT_DIR: "", SCHEMA_DIR: "" };
+const FIXTURE = join(import.meta.dir, "..", "fixtures", "mini-vault");
+const VAULT = mkdtempSync(join(tmpdir(), "obsi-plugin-"));
+copyTree(FIXTURE, VAULT);
+afterAll(() => rmSync(VAULT, { recursive: true, force: true }));
 
-const fields = (r: { valid: boolean; errors: { field: string }[]; warnings: { field: string }[] }) =>
-  [r.valid, r.errors.map((e) => e.field).sort(), r.warnings.map((w) => w.field).sort()];
+const app = fakeApp(VAULT) as any;
+const verdicts = (results: any[], rel: (f: string) => string) =>
+  Object.fromEntries(
+    results
+      .filter((r) => r.errors.length + r.warnings.length > 0)
+      .map((r) => [rel(r.file), [r.valid, r.errors.map((e: any) => e.field).sort(), r.warnings.map((w: any) => w.field).sort()]]),
+  );
+
+async function pluginOptions(checkLinks: boolean) {
+  const schema = await bridge.loadSchemaFromVault(app, "_system");
+  const cache = new bridge.LinkIndexCache(app);
+  return {
+    schema,
+    cache,
+    options: {
+      typeKeyField: resolveTypeKeyField(schema, ""),
+      checkLinks,
+      vaultIndex: bridge.needsLinkIndex(schema, checkLinks) ? await cache.get() : undefined,
+    },
+  };
+}
 
 describe("plugin bridge on the mini vault", () => {
-  test("schema loads from the vault and skips _deprecated/", () => {
+  test("schema loads from the vault and skips _deprecated/", async () => {
+    const schema = await bridge.loadSchemaFromVault(app, "_system/");
     expect([...schema.entityMap.keys()].sort()).toEqual(["area", "base", "epic", "page", "task"]);
     expect(schema.properties.find((p) => p.name === "estimate")?.property_type).toBe("number");
   });
 
-  test("_archive/ and _index.md are not validated", async () => {
-    const summary = await bridgeValidateVault(app, schema, opts);
-    const files = summary.results.map((r) => r.file);
-    expect(files.some((f) => f.startsWith("_archive/"))).toBe(false);
-    expect(files.some((f) => f.endsWith("_index.md"))).toBe(false);
+  test("the type field is detected from the schema when the setting is empty", async () => {
+    const { options } = await pluginOptions(true);
+    expect(options.typeKeyField).toBe("type_key");
   });
 
-  test("the link index ignores _archive/, so [[Work]] is the live area", async () => {
-    const index = await buildVaultIndex(app);
-    expect(index.get("Work")?.path).toBe("areas/Work/Work.md");
-    expect([...index.values()].some((e) => e.path.startsWith("_archive/"))).toBe(false);
-  });
-
-  test("the plugin index equals the CLI index rules: broken-YAML notes stay link targets", async () => {
-    const index = await buildVaultIndex(app);
-    expect(index.get("yaml-broken")?.path).toBe("notes/yaml-broken.md");
-    expect(index.get("notes/yaml-broken")?.path).toBe("notes/yaml-broken.md");
-  });
-
-  test("folder link rules work on vault paths (owner → people/)", async () => {
-    const good = app.vault.getAbstractFileByPath("tasks/good.md");
-    expect((await bridgeValidateFile(app, good, schema, opts)).valid).toBe(true);
-  });
-
-  test("every frontmatter verdict matches the CLI (mdbase engine, --check-links)", async () => {
-    const plugin = await bridgeValidateVault(app, schema, opts);
-    const p = Bun.spawnSync(
+  test("every verdict matches the CLI with --check-links", async () => {
+    const { schema, options } = await pluginOptions(true);
+    const plugin = await bridge.validateVaultNotes(app, schema, options);
+    const run = Bun.spawnSync(
       ["bun", join(ROOT, "src/cli.ts"), VAULT, "--schema-dir", join(VAULT, "_system"), "--check-links", "-f", "json"],
-      { cwd: ROOT },
+      { cwd: ROOT, env: CLI_ENV },
     );
-    const cli = JSON.parse(p.stdout.toString());
-    // Frontmatter diagnostics only (body-link fields start with "__"); files with none are dropped.
-    const issues = (results: any[], rel: (f: string) => string) =>
-      Object.fromEntries(
-        results
-          .map((r) => {
-            const errors = r.errors.filter((e: any) => !e.field.startsWith("__"));
-            return [rel(r.file), fields({ valid: errors.length === 0, errors, warnings: r.warnings })] as const;
-          })
-          .filter(([, [, errs, warns]]) => (errs as string[]).length + (warns as string[]).length > 0),
-      );
-    const cliMap = issues(cli.results, (f) => f.slice(VAULT.length + 1));
-    const pluginMap = issues(plugin.results, (f) => f);
-    expect(Object.keys(cliMap).length).toBeGreaterThan(10);
-    expect(pluginMap).toEqual(cliMap);
+    const cli = JSON.parse(run.stdout.toString());
+    expect(Object.keys(verdicts(cli.results, (f) => f)).length).toBeGreaterThan(10);
+    expect(verdicts(plugin.results, (f) => f)).toEqual(verdicts(cli.results, (f) => f.slice(VAULT.length + 1)));
+    expect(plugin.results.some((r) => r.file.startsWith("_archive/") || r.file.endsWith("_index.md"))).toBe(false);
   });
 
-  test("defaultEntityType from plugin settings does not make untyped notes fail", async () => {
-    const untyped = app.vault.getAbstractFileByPath("notes/untyped.md");
-    const r = await bridgeValidateFile(app, untyped, schema, { ...opts, defaultEntityType: "page" });
-    expect(r.valid).toBe(true);
-    expect(r.entityType).toBe("page");
+  test("archived notes lose names to live ones; broken-YAML notes stay link targets", async () => {
+    const index = await new bridge.LinkIndexCache(app).get();
+    const { resolveLink } = await import("../../src/link-index.js");
+    expect(resolveLink(index, "Work")?.path).toBe("areas/Work/Work.md");
+    expect(resolveLink(index, "_archive/2025/Work")?.path).toBe("_archive/2025/Work.md");
+    expect(resolveLink(index, "yaml-broken")?.path).toBe("notes/yaml-broken.md");
+  });
+
+  test("the index cache follows created, renamed and deleted notes", async () => {
+    const cache = new bridge.LinkIndexCache(app);
+    const { resolveLink } = await import("../../src/link-index.js");
+    await cache.get();
+    const file = await app.vault.create("notes/Fresh.md", "---\ntype_key: page\n---\n");
+    await cache.update(file);
+    expect(resolveLink(await cache.get(), "Fresh")).toBeDefined();
+    await app.vault.rename(file, "notes/Renamed.md");
+    cache.remove("notes/Fresh.md");
+    await cache.update(app.vault.getAbstractFileByPath("notes/Renamed.md"));
+    const index = await cache.get();
+    expect(resolveLink(index, "Fresh")).toBeUndefined();
+    expect(resolveLink(index, "Renamed")).toBeDefined();
+    rmSync(join(VAULT, "notes/Renamed.md"));
+    cache.remove("notes/Renamed.md");
+    expect(resolveLink(await cache.get(), "Renamed")).toBeUndefined();
+  });
+});
+
+describe("schema writes keep what the editor does not edit", () => {
+  test("saveEntity keeps the body, unknown keys and required_unless", async () => {
+    const path = "_system/entities/task_entity.md";
+    writeFileSync(join(VAULT, path), readFileSync(join(VAULT, path), "utf-8").replace(/---\n$/, "---\n") + "\nNotes about tasks.\n");
+    await bridge.saveEntity(app, path, {
+      name: "task",
+      allow_extra: false,
+      extends: "base",
+      properties: { status: { required: true }, estimate: {}, dod: { required: true }, owner: {} },
+    });
+    const text = readFileSync(join(VAULT, path), "utf-8");
+    expect(text).toContain("Notes about tasks.");
+    const { parseFrontmatter } = await import("../../src/frontmatter.js");
+    const fm = parseFrontmatter(text).data;
+    expect(fm.properties.dod).toEqual({ required_unless: { status: ["Closed", "Rejected"] } });
+    expect(fm.properties.estimate).toEqual({});
+    expect(Object.keys(fm.properties)).toEqual(["status", "estimate", "dod", "owner"]);
+  });
+
+  test("turning required off on a conditional property writes required: false", async () => {
+    const path = "_system/entities/task_entity.md";
+    await bridge.saveEntity(app, path, {
+      name: "task",
+      allow_extra: false,
+      extends: "base",
+      properties: { status: { required: true }, dod: { required: false } },
+    });
+    const { parseFrontmatter } = await import("../../src/frontmatter.js");
+    expect(parseFrontmatter(readFileSync(join(VAULT, path), "utf-8")).data.properties.dod).toEqual({
+      required: false,
+      required_unless: { status: ["Closed", "Rejected"] },
+    });
+  });
+
+  test("saveProperty keeps etl and the body, and removes cleared keys", async () => {
+    const path = "_system/properties/estimate_property.md";
+    writeFileSync(
+      join(VAULT, path),
+      "---\nproperty_name: estimate\nproperty_type: number\nmin_value: 1\nmax_value: 360\netl:\n  value_map: { small: 45 }\n---\nMinutes.\n",
+    );
+    await bridge.saveProperty(app, path, { name: "estimate", property_type: "number", max_value: 600 });
+    const text = readFileSync(join(VAULT, path), "utf-8");
+    const { parseFrontmatter } = await import("../../src/frontmatter.js");
+    const fm = parseFrontmatter(text).data;
+    expect(fm).toEqual({ property_name: "estimate", property_type: "number", max_value: 600, etl: { value_map: { small: 45 } } });
+    expect(text).toContain("Minutes.");
+  });
+
+  test("a new schema note is created in a new folder", async () => {
+    const path = bridge.schemaFilePath("_system", "property", "mood");
+    await bridge.saveProperty(app, path, { name: "mood", property_type: "enum", allowed_values: ["good", "bad"] });
+    expect(readFileSync(join(VAULT, "_system/properties/mood_property.md"), "utf-8")).toContain("property_name: mood");
+  });
+
+  test("archiveSchemaFile moves the note to _deprecated/ and out of the schema", async () => {
+    await bridge.archiveSchemaFile(app, "_system/properties/mood_property.md");
+    expect(app.vault.getAbstractFileByPath("_system/properties/_deprecated/mood_property.md")).not.toBeNull();
+    const schema = await bridge.loadSchemaFromVault(app, "_system");
+    expect(schema.properties.some((p) => p.name === "mood")).toBe(false);
+  });
+
+  test("writes outside the vault are refused", async () => {
+    await expect(bridge.saveProperty(app, "../escape.md", { name: "x", property_type: "string" })).rejects.toThrow("Unsafe path");
   });
 });

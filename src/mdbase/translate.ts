@@ -38,6 +38,9 @@ export type MdbaseConfigFile = {
   };
 };
 
+/** Same pattern as Zod's `.emoji()`: one or more emoji characters. */
+const EMOJI_PATTERN = "^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$";
+
 // Fresh object per call: a shared array reference would make the YAML emitter
 // write anchors/aliases (`&ref_0` / `*ref_0`) across properties.
 const listTolerant = (): JsonSchema => ({ type: ["array", "string", "number", "boolean"] });
@@ -51,8 +54,10 @@ export function propertyToJsonSchema(prop: ResolvedProperty): JsonSchema {
     case "date":
     case "datetime":
     case "link":
-    case "emoji":
       out = { type: "string" };
+      break;
+    case "emoji":
+      out = { type: "string", pattern: EMOJI_PATTERN };
       break;
     case "number": {
       out = { type: "number" };
@@ -97,12 +102,19 @@ export function propertyToJsonSchema(prop: ResolvedProperty): JsonSchema {
   return out;
 }
 
+/** Each value, plus its number form when it is numeric text. */
+function withNumericSpellings(values: string[]): (string | number)[] {
+  const numbers = values.filter((v) => v.trim() !== "" && Number.isFinite(Number(v))).map(Number);
+  return [...values, ...numbers];
+}
+
 /** Build the `if/else` clause expressing `required_unless` for one property.
  * Exempt when ANY listed field holds ANY of its values (schema.ts semantics);
  * the field must be present for the exemption to apply. */
 function requiredUnlessClause(propName: string, cond: Record<string, string[]>): JsonSchema {
   const branches = Object.entries(cond).map(([field, values]) => ({
-    properties: { [field]: { enum: values } },
+    // Numbers compare by their string form on the Zod side, so `1` matches "1".
+    properties: { [field]: { enum: withNumericSpellings(values) } },
     required: [field],
   }));
   return {
@@ -129,7 +141,7 @@ export function entityToTypeDef(
   for (const p of [...props].sort((a, b) => a.name.localeCompare(b.name))) {
     if (p.name === typeKeyField) continue;
     properties[p.name] = propertyToJsonSchema(p);
-    if (p.required_unless) conditionals.push(requiredUnlessClause(p.name, p.required_unless));
+    if (p.required && p.required_unless) conditionals.push(requiredUnlessClause(p.name, p.required_unless));
     else if (p.required) required.push(p.name);
     const target = p.link_constraints?.target_type_key;
     if (target) links[p.name] = { target_type: target, validate_exists: true };

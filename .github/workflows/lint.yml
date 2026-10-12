@@ -19,4 +19,5 @@ jobs:
             - run: bun run lint
             - run: bun test
             - run: bun run build
+            - run: node scripts/check-plugin-bundle.mjs main.js
             - run: bun run build:cli

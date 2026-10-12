@@ -282,25 +282,16 @@ function asItems(value: unknown): unknown[] {
 }
 
 /**
- * Handwritten-task detector (user ratification 2026-08-17, intake model §2 +
- * amendment same day). For tasks with `created` >= TASK_INTAKE_CUTOFF:
- *   (а) `created` must be a full ISO timestamp with time — only
- *       tasknotes:capture stamps that shape;
- *   (б) `created_by` is required, exactly one author link;
- *   (в) `epic` OR `area` must be non-empty (amendment, user ruling 17.08;
- *       area-only override, user ruling 24.08 — "area-only анкор только по
- *       его слову" from obsi-tasks skill / task-creation.md was documented
- *       but never enforceable by this detector until now: an unconditional
- *       epic requirement silently contradicted it. Fix: accept area as an
- *       equally valid anchor, not just epic);
- * every error directs to the obsi-tasks skill.
- * Grandfathering: tasks created before the cutoff are exempt, and so are
- * tasks with no/unparseable `created` at all — 448 legacy tasks carry no
- * `created` (measured 17.08 on the live vault), so treating absence as
- * post-cutoff would flag them all. Known bypass: a new handwritten task that
- * omits `created` entirely escapes this detector; closing that requires
- * `created: {required: true}` in task_entity (schema DSL, orchestrator's
- * call), not detector logic.
+ * Handwritten-task detector. For tasks with `created` >= TASK_INTAKE_CUTOFF:
+ *   1. `created` must be a full ISO timestamp with time — only the capture
+ *      tool writes that shape;
+ *   2. `created_by` must hold exactly one author link;
+ *   3. `epic` or `area` must be non-empty.
+ * Every error points to the task-creation tool.
+ * Tasks created before the cutoff, or with no parseable `created`, are exempt:
+ * many older tasks have no `created` at all. A new task that omits `created`
+ * escapes the detector; `created: {required: true}` on the task entity closes
+ * that gap.
  */
 export function validateTaskIntake(
   content: string,
@@ -320,7 +311,7 @@ export function validateTaskIntake(
 
   const errors: ValidationError[] = [];
 
-  // (а) ISO timestamp with time, checked against the raw text (YAML turns
+  // 1. ISO timestamp with time, checked against the raw text (YAML turns
   // both date-only and full timestamps into Date objects).
   const rawCreated = rawFrontmatterValue(content, "created");
   if (!rawCreated || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawCreated)) {
@@ -331,7 +322,7 @@ export function validateTaskIntake(
     });
   }
 
-  // (б) created_by — required, exactly one author link
+  // 2. created_by — exactly one author link
   const createdBy = asItems(data["created_by"]);
   if (createdBy.length !== 1) {
     errors.push({
@@ -341,9 +332,7 @@ export function validateTaskIntake(
     });
   }
 
-  // (в) epic OR area — at least one non-empty anchor. Area-only tasks are a
-  // legal path (user ruling 24.08) when there's no natural epic; the
-  // detector only rejects tasks anchored to neither.
+  // 3. epic or area — a task anchored to neither is rejected.
   const epic = asItems(data["epic"]);
   const area = asItems(data["area"]);
   if (epic.length === 0 && area.length === 0) {

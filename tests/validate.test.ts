@@ -350,7 +350,7 @@ describe("link constraints in property values", () => {
       const schema = await listSchema();
       const file = {
         path: "/v/tasks/x.md",
-        content: '---\ntype_key: task\nassignee: "[[Mikhail Chepkin]]"\n---',
+        content: '---\ntype_key: task\nassignee: "[[Alex Example]]"\n---',
       };
       const result = validateFile(file, schema, { typeKeyField: "type_key" });
       expect(result.errors.find((e) => e.field === "assignee")).toBeUndefined();
@@ -364,7 +364,7 @@ describe("link constraints in property values", () => {
           "---",
           "type_key: task",
           "assignee:",
-          '  - "[[Mikhail Chepkin]]"',
+          '  - "[[Alex Example]]"',
           '  - "[[agent-area-vault-tools]]"',
           "---",
         ].join("\n"),
@@ -511,7 +511,7 @@ describe("link constraints in property values", () => {
           "created: 2026-08-19T10:15:00.000+02:00",
           "created_by:",
           '  - "[[agent-core]]"',
-          '  - "[[Mikhail Chepkin]]"',
+          '  - "[[Alex Example]]"',
           "epic: []",
           "---",
         ].join("\n"),
@@ -606,11 +606,11 @@ describe("validateBodyLinks", () => {
       "",
       "| Name / Aliases         | Wikilink          |",
       "|:---------------------- |:----------------- |",
-      "| Света, Sveta, Светлана | [[Sveta Efimova]] |",
+      "| Zoë, Zoe, Zoey        | [[Zoe Example]]   |",
       "",
     ].join("\n");
 
-    const errors = validateBodyLinks(content, indexWith("Sveta Efimova"));
+    const errors = validateBodyLinks(content, indexWith("Zoe Example"));
     expect(errors).toHaveLength(0);
   });
 
@@ -631,11 +631,11 @@ describe("validateBodyLinks", () => {
       "| col1 | col2 |",
       "|------|------|",
       "| [[Open | thing |",
-      "| line2 | [[Sveta Efimova]] |",
+      "| line2 | [[Zoe Example]] |",
       "",
     ].join("\n");
 
-    const errors = validateBodyLinks(content, indexWith("Sveta Efimova"));
+    const errors = validateBodyLinks(content, indexWith("Zoe Example"));
     expect(errors).toHaveLength(0);
   });
 
@@ -949,8 +949,8 @@ describe("wikilink resolution — alias-aware index", () => {
   });
 
   test("scalar aliases field resolves the same as a list", () => {
-    const index = indexWithAliases([{ path: "cmdb/persons/Sveta Efimova.md", aliases: "Света" }]);
-    expect(validateBodyLinks(body("[[Света]]"), index)).toHaveLength(0);
+    const index = indexWithAliases([{ path: "cmdb/persons/Zoe Example.md", aliases: "Zoë" }]);
+    expect(validateBodyLinks(body("[[Zoë]]"), index)).toHaveLength(0);
   });
 
   test("a real note's own name always wins over another note's alias", () => {

@@ -1,12 +1,11 @@
 /**
  * VaultSchema → mdbase (JSON Schema 2020-12) projection.
  *
- * Our two-tier authoring model (entities/** + properties/**) stays the SSOT;
- * this module compiles it into mdbase's flat per-type files. Nothing here is
- * hand-maintained: `_types/*.md` and `mdbase.yaml` are generated artifacts.
+ * The two-tier schema notes (entities/** + properties/**) stay the source of
+ * truth; this module compiles them into mdbase's flat per-type files, so
+ * `_types/*.md` and `mdbase.yaml` are generated, never edited by hand.
  *
- * Deliberately minimal (user ruling 28.09 — "не переусложнять"): one mapping
- * table, no plugin hooks, no per-property overrides. Whatever mdbase cannot
+ * One mapping table, no hooks, no per-property overrides. Whatever mdbase cannot
  * express (link target folder/property checks, task-intake gating,
  * custom_validator, expected_folder, body link checks) is simply not emitted
  * and stays in the bespoke layer of validate.ts.

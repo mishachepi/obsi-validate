@@ -88,10 +88,8 @@ export function resolveConfig(flags: Partial<Config>, configPathOverride?: strin
     default_type:
       file.default_type ??
       DEFAULTS.default_type,
-    // Additive, not override: config file and --exclude both apply together
-    // (task DoD: "работают ОБА уровня"). A CLI flag layers a one-off
-    // exclusion on top of the persistent config-file list, it does not
-    // replace it.
+    // Additive: --exclude adds a one-off exclusion on top of the config-file
+    // list instead of replacing it.
     exclude_dirs: [
       ...(file.exclude_dirs ?? DEFAULTS.exclude_dirs),
       ...(flags.exclude_dirs ?? []),

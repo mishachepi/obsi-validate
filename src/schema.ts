@@ -292,14 +292,9 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.union([z.string(), z.array(z.string())]);
 
     case "list":
-      // Scalar tolerance (user ruling 18.08): both YAML representations of a
-      // one-element list are legal — `assignee: "[[X]]"` and the block form.
-      // Half the vault is written by hand or by tools that emit the scalar
-      // form; rejecting it ("Expected array, received string") punished a
-      // legal document. A scalar is treated as a one-item list, mirroring
-      // "links" above and the link_constraints walker in validate.ts, which
-      // already coerce scalar↔array. Genuinely broken shapes (a YAML mapping
-      // where a list belongs) still fail.
+      // A scalar counts as a one-item list (`assignee: "[[X]]"` is as legal
+      // as the block form), like "links" above. A mapping or an empty value
+      // where a list belongs still fails.
       return z.union(
         [z.array(z.unknown()), z.string(), z.number(), z.boolean()],
         {
@@ -314,13 +309,9 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.string().emoji({ message: "Must be an emoji" });
 
     case "any":
-      // Explicit escape hatch (user ruling 26.08): a property whose legal
-      // shape genuinely varies by record (e.g. `dod` — string prose most of
-      // the time, occasionally a YAML list) opts out of shape-checking
-      // entirely. Distinct from `default` below: this is deliberate, named,
-      // and documented — the default branch exists for schema authors who
-      // typo'd or forgot a type, and must stay silently permissive for
-      // backward compat, but should never be the thing `any` relies on.
+      // Deliberately unchecked: for properties whose shape varies by note
+      // (e.g. prose or a list). Unlike the unknown-type fallback below, this
+      // is an explicit choice by the schema author.
       return z.unknown();
 
     default:

@@ -12,7 +12,7 @@ Package `@callumalpass/mdbase@0.3.0-rc.9`, pinned exactly (no stable 0.3.0 on np
 | Path | Verdict | Why |
 |---|---|---|
 | **CLI** (hooks, CI, `obsi-validate`) | **GO** | 100 % parity with Zod on the live vault and on the 40-case harness; nothing bespoke lost; about as fast as Zod. |
-| **Obsidian plugin** | **NO-GO for now** | Technically feasible (pure in-memory validator exists), but the package's `exports` map forbids a sub-path import, so the plugin would swallow all of mdbase: bundle 162 KB → ~700 KB and a `node:fs`/`node:path` dependency that breaks the mobile build. Revisit when upstream exposes a `validate`-only entry, or via a vendored copy of the JSON-Schema step. |
+| **Obsidian plugin** | **possible, not switched** | The plugin stays on Zod. The validator module needs only ajv (no `node:fs`), and the adapter now bundles for the browser at ~200 KB including js-yaml, which the plugin already ships. Switching would make the plugin and the CLI run the same engine. |
 | **Full `_system/**` → `mdbase.yaml`+`_types/` migration** | **not opened** | Out of scope by design; the compile-step model (below) makes it unnecessary. |
 
 Model that the spike validates: **notes = SSOT, `_types/` = generated artifact.** Nothing in
@@ -47,7 +47,7 @@ express, and generation is what makes that a non-issue.
 Go/no-go bar was ≥ 95 %. Skipped on purpose: task-intake detector and `--check-links`/inline
 properties — bespoke code that runs byte-identically after the engine on both paths.
 
-## Explicit answers (asked for by the schema owner)
+## Answers
 
 **Dates.** gray-matter turns a bare ISO date into a `Date`; JSON Schema has no date type. Zod
 accepts `Date` only for `date`/`datetime` properties (`z.union([string, date])`). The adapter
@@ -63,8 +63,7 @@ stay bespoke in `validateLinkTarget()` — permanently, unless the spec grows th
 **CEL.** `TypeDefinition` takes expressions only in `match.expr` (type selection),
 `collection.projections` (computed values) and `lifecycle.*.if` (write hooks). There is **no
 record-level assertion hook**. So the task-intake detector (date-gated, procedural) cannot move
-into the schema — consistent with the schema owner's ruling that transition rules are not shape
-rules and do not belong in the schema anyway.
+into the schema Transition rules are not shape rules and do not belong in the schema.
 
 **`type_key`.** `settings.explicit_type_keys: [type_key]` works at runtime; an unknown value is
 an `unknown_type` error, matching our "unknown type_key is an error" rule.
@@ -79,14 +78,15 @@ an `unknown_type` error, matching our "unknown type_key is an error" rule.
   errors caused by a shadowing property file.
 - Two engines that agree give the vault a regression oracle for free.
 
-## Recommended next step
+## Next steps
 
-1. Keep `--engine zod` as the default until mdbase publishes a stable 0.3.0; keep the mdbase
-   path green in CI (parity test) so the switch is a one-line default change.
-2. Ask upstream for a `@callumalpass/mdbase/validate` sub-path export (pure JSON-Schema
-   validation, no `Collection`/sql.js). That single change flips the plugin verdict.
-3. Do **not** open a full `_system/**` migration: with the compile-step there is nothing to
-   migrate — the notes already are the schema.
+1. mdbase is the CLI default; Zod stays available as `--engine zod` and as the second engine in
+   the parity tests, so any divergence fails CI.
+2. The plugin can move to mdbase too (see the verdict table); until then it runs Zod.
+3. An upstream `validate`-only export would replace the file-path import in
+   `src/mdbase/json-schema.ts`.
+4. No full `_system/**` migration: with the compile step there is nothing to migrate — the
+   notes already are the schema.
 
 ## Rollout — one script for every machine (M1 / M4 / M5)
 

@@ -12,8 +12,6 @@
  * and stays in the bespoke layer of validate.ts.
  */
 import matter from "gray-matter";
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
 import type { ResolvedProperty, VaultSchema } from "../types.js";
 
 export type JsonSchema = Record<string, unknown>;
@@ -192,24 +190,4 @@ export function renderTypeFile(def: MdbaseTypeDef): string {
 export function renderConfigFile(config: MdbaseConfigFile): string {
   // gray-matter's stringify wraps YAML in `---` fences; strip them to get a bare YAML doc.
   return matter.stringify("", config).replace(/^---\n/, "").replace(/\n---\n*$/, "\n");
-}
-
-/** Write `mdbase.yaml` + `_types/*.md` into `outDir`. Returns written paths (relative). */
-export async function exportMdbase(
-  schema: VaultSchema,
-  typeKeyField: string,
-  outDir: string,
-): Promise<string[]> {
-  const { config, types } = translateSchema(schema, typeKeyField);
-  await mkdir(join(outDir, config.settings.types_folder), { recursive: true });
-  const written: string[] = [];
-
-  await writeFile(join(outDir, "mdbase.yaml"), renderConfigFile(config), "utf-8");
-  written.push("mdbase.yaml");
-  for (const def of types) {
-    const rel = join(config.settings.types_folder, `${def.name}.md`);
-    await writeFile(join(outDir, rel), renderTypeFile(def), "utf-8");
-    written.push(rel);
-  }
-  return written;
 }

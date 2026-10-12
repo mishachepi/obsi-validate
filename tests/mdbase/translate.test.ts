@@ -6,11 +6,11 @@ import matter from "gray-matter";
 import { validateJsonSchemaFrontmatter, type TypeDefinition } from "@callumalpass/mdbase";
 import {
   entityToTypeDef,
-  exportMdbase,
   propertyToJsonSchema,
   renderTypeFile,
   translateSchema,
 } from "../../src/mdbase/translate.js";
+import { exportMdbase } from "../../src/mdbase/export.js";
 import { fixtureSchema } from "./fixture.js";
 
 const byName = (schema: ReturnType<typeof fixtureSchema>, entity: string, prop: string) =>

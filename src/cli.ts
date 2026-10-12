@@ -116,7 +116,7 @@ program
   .option("--type-key-field <name>", "frontmatter field that identifies entity type (auto-detected from schema; falls back to 'entity')")
   .action(async (options) => {
     try {
-      const { exportMdbase } = await import("./mdbase/translate.js");
+      const { exportMdbase } = await import("./mdbase/export.js");
       const { mkdtemp } = await import("fs/promises");
       const { tmpdir } = await import("os");
       // Commander recognises root options (--schema-dir, --type-key-field) even when

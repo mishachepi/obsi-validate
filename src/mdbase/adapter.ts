@@ -7,7 +7,8 @@
  * Diagnostics are mapped onto the existing ValidationError contract; all
  * bespoke rules stay in validate.ts untouched.
  */
-import { validateJsonSchemaFrontmatter, type TypeDefinition } from "@callumalpass/mdbase";
+import type { TypeDefinition } from "@callumalpass/mdbase";
+import { validateJsonSchemaFrontmatter } from "./json-schema.js";
 import type { ShapeEngine, ValidationError, VaultSchema } from "../types.js";
 import { translateSchema } from "./translate.js";
 

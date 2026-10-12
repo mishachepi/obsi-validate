@@ -11,7 +11,7 @@ Package `@callumalpass/mdbase@0.3.0-rc.9`, pinned exactly (no stable 0.3.0 on np
 
 | Path | Verdict | Why |
 |---|---|---|
-| **CLI** (hooks, CI, `obsi-validate`) | **GO** | 100 % parity with Zod on the live vault and on the 40-case harness; nothing bespoke lost; about 0.1 s slower per run. |
+| **CLI** (hooks, CI, `obsi-validate`) | **GO** | 100 % parity with Zod on the live vault and on the 40-case harness; nothing bespoke lost; about as fast as Zod. |
 | **Obsidian plugin** | **NO-GO for now** | Technically feasible (pure in-memory validator exists), but the package's `exports` map forbids a sub-path import, so the plugin would swallow all of mdbase: bundle 162 KB → ~700 KB and a `node:fs`/`node:path` dependency that breaks the mobile build. Revisit when upstream exposes a `validate`-only entry, or via a vendored copy of the JSON-Schema step. |
 | **Full `_system/**` → `mdbase.yaml`+`_types/` migration** | **not opened** | Out of scope by design; the compile-step model (below) makes it unnecessary. |
 
@@ -22,15 +22,15 @@ express, and generation is what makes that a non-issue.
 
 ## Measurements
 
-**Live vault** (4240 files, `--schema-dir /Volumes/mch/_system`, warm file cache), both engines:
+**Live vault** (4243 files, `--schema-dir /Volumes/mch/_system`, warm file cache), both engines:
 
 | | Zod | mdbase |
 |---|---|---|
 | valid / invalid / skipped | 3410 / 300 / 530 | 3410 / 300 / 530 |
 | files with diagnostics, identical (validity + error fields + warning fields) | 922 / 922 | |
 | with `--check-links`, files with diagnostics identical | 1224 / 1224 | |
-| wall time, whole vault | ~0.40 s | ~0.55 s |
-| wall time, one file with `--check-links` (the hook) | ~0.34 s | ~0.45 s |
+| wall time, whole vault | ~0.40 s | ~0.42 s |
+| wall time, one file with `--check-links` (the hook) | ~0.31 s | ~0.35 s |
 
 **Harness** (`tests/mdbase/parity.test.ts`, 40 cases, both engines through `validateFile()`):
 

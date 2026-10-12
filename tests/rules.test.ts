@@ -5,6 +5,7 @@ import { validateFile } from "../src/validate.js";
 import { mdbaseShapeEngine } from "../src/mdbase/adapter.js";
 import { ALWAYS_SKIPPED_DIRS, buildIndexFromEntries, isInSkippedDir, isValidationTarget } from "../src/link-index.js";
 import { findView } from "../src/view-lookup.js";
+import { assertSafeVaultPath } from "../src/vault-path.js";
 import { frontmatterBlock, parseFrontmatter } from "../src/frontmatter.js";
 import type { ValidateOptions } from "../src/types.js";
 import { readMdFiles } from "./helpers.js";
@@ -171,4 +172,16 @@ describe("buildIndexFromEntries — one link index for CLI and plugin", () => {
   test("a note whose YAML did not parse is still a link target", () => {
     expect(buildIndexFromEntries([e("notes/broken.md", {})]).has("broken")).toBe(true);
   });
+});
+
+describe("assertSafeVaultPath — plugin writes stay inside the vault", () => {
+  test.each(["_system/entities/task_entity.md", "a/v1..2 notes.md", "a/./b.md"])("allows %s", (p) => {
+    expect(() => assertSafeVaultPath(p)).not.toThrow();
+  });
+  test.each(["../x.md", "a/../../x.md", "a\\..\\x.md", "/etc/passwd", "\\\\server\\x", "C:\\x.md", "", "  "])(
+    "rejects %p",
+    (p) => {
+      expect(() => assertSafeVaultPath(p)).toThrow("Unsafe path");
+    },
+  );
 });

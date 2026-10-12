@@ -1,54 +1,65 @@
 # Property Validator
 
-Obsidian plugin that validates vault frontmatter against schemas defined in the vault itself. No external config — schema lives as YAML frontmatter in entity/property files.
+Validates Obsidian frontmatter against a schema kept in the vault itself: **entity** notes say
+which fields a note type has, **property** notes say what a valid value is. Works as an Obsidian
+plugin (live, while you edit), as a CLI (git hooks, CI) and as a library — with the same rules
+and the same verdicts.
 
 ## Features
 
-- Entity-centric schema: entities declare fields, properties define validation rules
-- Entity inheritance via `extends` (with circular dependency detection)
-- Three-level validation: structure, Zod types, link constraints + custom JS
-- Reactive status bar with per-file validation
-- Settings UI with 3 tabs: Settings, Entities, Properties
-- Entity/Property CRUD with auto-save
-- Link constraints: validate what linked notes must satisfy
-- Folder-based grouping
-- Pluggable shape engine: [mdbase](https://mdbase.dev/) JSON Schema (CLI default) or Zod via `--engine zod` (plugin default); `mdbase-export` compiles the vault schema to `mdbase.yaml` + `_types/*.md` (see [docs/mdbase-spike.md](docs/mdbase-spike.md))
+- Entity inheritance via `extends`
+- Value types, allowed values, ranges, required and conditionally required (`required_unless`) fields, custom JavaScript checks
+- Link checks: linked notes must exist and can be required to have a type, folder or property; body wikilinks resolved the way Obsidian resolves them
+- Live status bar and result panels in Obsidian
+- Schema editor in Settings (Entities, Properties) that keeps everything it does not edit
+- CLI with JSON output for hooks and CI; two interchangeable shape engines — Zod and [mdbase](https://mdbase.dev/) JSON Schema — and `mdbase-export` to write the schema as an mdbase collection
 
 ## Install
+
+Requires [Bun](https://bun.sh) 1.3+ (and Node.js 20+ for the plugin build).
 
 ```bash
 git clone https://github.com/mishachepi/obsi-validate.git && cd obsi-validate
 bun install && bun run build
 ```
 
-Copy `main.js`, `manifest.json`, `styles.css` to `.obsidian/plugins/property-validator/` in your vault.
+Copy `main.js`, `manifest.json`, `styles.css` to `.obsidian/plugins/property-validator/` in your
+vault and enable **Property Validator**.
 
-## CLI
-
-Also works as a standalone CLI:
+CLI:
 
 ```bash
 bun run build:cli && bun link
-obsi-validate --vault-dir /path/to/vault
+obsi-validate /path/to/vault --check-links
 ```
 
 ## Docs
 
-- [About](docs/index.md) — overview and key features
-- [Getting started](docs/getting-started.md) — installation and quick start tutorial
-- [Configuration](docs/configuration.md) — plugin settings and schema management UI
-- [Schema reference](docs/schema-reference.md) — entity/property file format, types, validation logic
-- [CLI](docs/cli.md) — command-line usage
-- [Architecture](docs/architecture.md) — data flow, modules, security
-- [Troubleshooting](docs/troubleshooting.md) — common problems and what to check
+- [About](docs/index.md) — overview and features
+- [Getting started](docs/getting-started.md) — installation, updating, first schema
+- [Configuration](docs/configuration.md) — plugin settings and the schema editor
+- [Schema reference](docs/schema-reference.md) — file format, types, validation rules
+- [CLI](docs/cli.md) — options, config file, output, library
+- [Architecture](docs/architecture.md) — modules, data flow, security
+- [mdbase engine](docs/mdbase.md) — the JSON-Schema engine and `mdbase-export`
+- [Troubleshooting](docs/troubleshooting.md) — common problems
 
-## TODO
+## Development
 
-- [ ] Improve entity inheritance (inherit allow_extra, multi-level UI display, abstract entities)
-- [ ] Inline decorations: red underline on invalid frontmatter values, hover tooltips
-- [ ] Quick-fix suggestions for enum values (fuzzy match "Did you mean...?")
-- [ ] Autofix suggestions: `"true"` to `true`, array to string, string to array, type coercion
+```bash
+bun test            # all tests
+bun run lint        # type-check
+bun run build       # plugin → main.js
+bun run build:cli   # CLI and library → dist/
+```
+
+## Ideas
+
+- [ ] Inherit `allow_extra`; abstract entities
+- [ ] Inline decorations: underline invalid frontmatter values, hover tooltips
+- [ ] Quick fixes for enum values ("Did you mean…?")
+- [ ] Autofix: `"true"` → `true`, list ↔ single value
 
 ## Tech Stack
 
-TypeScript, esbuild, Zod, gray-matter, Obsidian API
+TypeScript, Bun, esbuild, Zod, @callumalpass/mdbase (CLI), gray-matter, commander (CLI), Obsidian API

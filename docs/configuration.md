@@ -1,6 +1,7 @@
 # Configuration
 
-All settings are in **Settings > Property Validator**. Three tabs: Settings, Entities, Properties.
+All settings are in **Settings > Property Validator**, on three tabs: Settings, Entities,
+Properties.
 
 ![Settings tab](assets/screenshots/settings-tab.png)
 
@@ -10,19 +11,21 @@ All settings are in **Settings > Property Validator**. Three tabs: Settings, Ent
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Schema directory** | `.` | Folder with `entities/` and `properties/` subdirs, relative to vault root |
-| **Entity field** | `entity` | Frontmatter field that identifies a note's entity type |
-| **Default entity type** | *(empty)* | Fallback entity type when the field is missing: the note is validated as that type, and the missing field itself is not an error. Empty = skip |
-| **Show ribbon icon** | off | "Validate vault" button in the left sidebar |
+| **Schema directory** | `.` | Folder with `entities/` and `properties/`, relative to the vault root. |
+| **Type key field** | *(empty)* | Frontmatter field naming a note's type. Empty: `type_key` if the schema declares a `type_key` property, else `entity` — the same rule as the CLI. |
+| **Default entity type** | *(empty)* | Type for notes without a type field. Such notes are validated as that type, with a warning. Empty: they are skipped. |
+| **Check links in the note body** | on | Report body wikilinks and inline `[key:: value]` properties that point to missing notes, like the CLI's `--check-links`. |
+| **Show ribbon icon** | off | A "Validate vault" button in the left sidebar. |
 
 !!! tip
-    Set **Schema directory** to a dedicated folder like `System` to keep schema files separate from your notes.
+    Keep the schema in its own folder, e.g. `_system`.
 
 !!! note "What is never validated"
-    The plugin and the CLI skip the same files: anything under a dot-folder, `_archive/` or
-    `_skill/`, and folder `_index.md` files. Archived notes are also left out of link
-    resolution, so an archived copy never stands in for a live note of the same name.
-    Schema loading skips `_deprecated/`.
+    The plugin and the CLI skip the same notes: anything under a dot-folder, `_archive/` or
+    `_skill/`, and `_index.md` files. Archived notes are still link targets by full path, but
+    never win a bare name over a live note. Schema loading also skips `_deprecated/`.
+
+The CLI's `exclude_dirs` / `--exclude` have no plugin setting.
 
 ---
 
@@ -30,64 +33,65 @@ All settings are in **Settings > Property Validator**. Three tabs: Settings, Ent
 
 | Command | Description |
 |---------|-------------|
-| **Validate current file** | Validate the active note |
-| **Validate vault** | Scan all markdown files |
-| **Show validation results** | Open the results panel |
+| **Validate current file** | Validate the active note and open the results panel |
+| **Validate vault** | Validate every note and open the vault results panel |
+| **Show validation results** | Open the results panel for the active note |
 
-All available via Command Palette (`Cmd/Ctrl + P`).
+All are in the Command Palette (`Cmd/Ctrl + P`).
 
 ---
 
 ## Status bar
 
-Shows the current note's validation state with a colored dot:
+A colored dot for the active note:
 
 - :green_circle: **Green** — valid
 - :yellow_circle: **Yellow** — warnings only
-- :red_circle: **Red** — has errors
+- :red_circle: **Red** — errors
 
-Click to open the results panel. Hidden when the active file has no entity type.
+Click it to open the results panel. It is hidden when the note has no type, and also when its
+YAML does not parse or its type field is not text — run **Validate current file** to see why.
 
 ---
 
-## Reactive behavior
+## Automatic validation
 
-The plugin validates automatically:
-
-- On file save (debounced 800ms)
-- When switching files
-- Schema cache refreshes when entity/property files change
+- After an edit is saved (800 ms after the last change)
+- When you switch notes
+- The schema reloads when a file under `entities/` or `properties/` changes; the link index
+  follows created, changed, renamed and deleted files.
 
 ---
 
 ## Managing schemas
 
-!!! tip
-    Schema files are regular markdown with YAML frontmatter. The UI and hand-editing are fully interchangeable — edit however you prefer.
+Schema notes are ordinary markdown. Saving from the UI edits only the frontmatter keys the form
+shows and keeps everything else: the note body, keys the form does not show (`etl`,
+descriptions) and per-property rules such as `required_unless`.
 
 ### Entities tab
 
 ![Entities tab](assets/screenshots/entities-tab.png)
 
-Lists all entities grouped by subdirectory. Click to expand:
+Entities are grouped by subfolder. Expand one to edit:
 
-- **Extends** — parent entity dropdown
-- **Allow extra** — toggle for unknown fields
-- **Own properties** — editable, with required toggles
-- **Inherited properties** — read-only, grouped by source entity
-- **Open file** / **Archive** buttons
+- **Extends** — the parent entity
+- **Allow extra fields** — no warnings for unlisted fields
+- **Expected folder** — notes of this type must live in this folder
+- **Own properties** — with a required toggle each; add from the list or type a new name
+- **Inherited properties** — read-only, grouped by the entity they come from
+- **Open file** / **Archive**
 
 #### Creating an entity
 
-Click **Create new entity**. Enter name, parent, and properties.
+Click **New Entity**, fill in the form and click **Create**. Names are lower-cased with spaces
+turned into `_`; they may not contain `/ \ : * ? " < > |`, start with `.` or `_`, or be longer
+than 100 characters. The note is created as `entities/<name>_entity.md`, along with the folders.
 
 ![Create entity form](assets/screenshots/create-entity.png)
 
-See [Schema reference > Entity files](schema-reference.md#entity-files) for the full format.
-
-#### Editing
-
-Changes auto-save (500ms debounce). To override an inherited property, add it to the child's own list.
+Edits save automatically, 500 ms after the last change. To change an inherited property's rule,
+add it to the child's own list. Full format: [Schema reference > Entity files](schema-reference.md#entity-files).
 
 ---
 
@@ -95,42 +99,43 @@ Changes auto-save (500ms debounce). To override an inherited property, add it to
 
 ![Properties tab](assets/screenshots/properties-tab.png)
 
-Lists all properties grouped by subdirectory. Click to expand:
+Properties are grouped by subfolder. Expand one to edit:
 
-- **Type** and type-specific constraints
-- **Nullable** toggle
-- **Custom validator** expression
-- **Open file** / **Archive** buttons
+- **Type** and the fields for that type
+- **Nullable**
+- **Custom validator** — a broken expression is not saved
+- **Open file** / **Archive**
 
 #### Creating a property
 
-Click **Create new property**. Fields depend on type:
+Click **New Property**, fill in the form and click **Create**. Extra fields by type:
 
-| Type | Additional fields |
-|------|-------------------|
-| `enum` | Allowed values list |
-| `number` | Min, Max, Unit |
-| `link`, `links`, `list` | Target type, folder, property, value |
+| Type | Fields |
+|------|--------|
+| `enum` | Allowed values |
+| `number` | Min value, Max value, Unit |
+| `link`, `links`, `list` | Link constraints (below) |
 
-See [Schema reference > Property files](schema-reference.md#property-files) for the full format.
+**Nullable** is set when editing an existing property. Full format:
+[Schema reference > Property files](schema-reference.md#property-files).
 
-#### Link constraints editor
+#### Link constraints
 
 ![Link constraints](assets/screenshots/link-constraints.png)
 
-For link/links/list types:
-
-- **Target entity type** — comma-separated (e.g. `area, project`)
-- **Target folder** — prefix match (e.g. `Areas/`)
-- **Target has property** — field must exist
-- **Target property value** — field must equal value
+- **Target entities** — allowed types of the linked note
+- **Target folder** — the linked note's path must start with this folder
+- **Target has property** — the linked note must have this field
+- **Target property value** — the linked note's field must equal this value
 
 ---
 
 ### Search
 
-Both tabs have a search field at the top to filter by name.
+Both tabs have a search field that filters by name, ignoring case.
 
 ### Archiving
 
-Click **Archive** on any entity or property to move it to `_deprecated/`. Archived files are not loaded by the plugin. No data is deleted.
+**Archive** moves the note into a `_deprecated/` folder next to it. Archived definitions are
+not part of the schema, so notes of an archived type fail with `Unknown entity type`. Nothing
+is deleted.

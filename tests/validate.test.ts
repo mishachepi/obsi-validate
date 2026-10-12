@@ -16,7 +16,7 @@ async function getSchema() {
   return loadSchema(entityFiles, propertyFiles);
 }
 
-// Test fixtures use "type_key" as the entity field
+// Test fixtures use "type_key" as the type field
 const opts = { typeKeyField: "type_key" };
 
 describe("validateFile", () => {
@@ -92,9 +92,7 @@ describe("validateFile", () => {
     expect(result.warnings[0].message).toContain("Missing type_key");
   });
 
-  // Error, not warning (user/core ruling 2026-07-20): a typo'd or undeclared
-  // type_key must block every call site (manual CLI included), not just the
-  // PostToolUse hook's own separate warning-text detection.
+  // An unknown type is an error, so every caller (hook, CI, manual run) fails on it.
   test("unknown entity type is an error, invalid=true", async () => {
     const schema = await getSchema();
     const file = {
@@ -325,10 +323,7 @@ describe("link constraints in property values", () => {
     expect(result.errors.find((e) => e.field === "epic")).toBeUndefined();
   });
 
-  // Scalar tolerance for `list` properties (user ruling 18.08): both YAML
-  // representations of a one-element list are legal. `assignee` is
-  // property_type: list and the scalar form used to fail with
-  // "Expected array, received string" on hand-written notes.
+  // A `list` property accepts a single value as a one-item list.
   describe("list property scalar tolerance", () => {
     const listSchema = () =>
       loadSchema(
@@ -390,10 +385,7 @@ describe("link constraints in property values", () => {
     });
   });
 
-  // `any` escape hatch (user ruling 26.08, obsi-validate-any-type-escape-hatch):
-  // a property whose legal shape genuinely varies by record (e.g. `dod` —
-  // usually prose, occasionally a YAML checklist) opts out of shape-checking
-  // entirely, instead of `list`'s narrower array-or-scalar tolerance above.
+  // `any`: no shape check, for fields whose shape varies by note (prose or a list).
   describe("any property type — no shape check", () => {
     const anySchema = () =>
       loadSchema(
@@ -536,7 +528,7 @@ describe("link constraints in property values", () => {
       expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
     });
 
-    test("area-only anchor passes when epic is absent (user ruling 24.08)", async () => {
+    test("area-only anchor passes when epic is absent", async () => {
       const schema = await taskSchema();
       const file = {
         path: "/v/tasks/area-only.md",
@@ -1022,11 +1014,7 @@ describe("property_patterns — open key families", () => {
 });
 
 describe("required_unless — conditional requirement", () => {
-  // `dod` is required by user ruling, but the rule arrived after history had
-  // accumulated: 196 already-closed notes can never satisfy it, because writing
-  // an acceptance criterion for someone else's finished work is fabrication.
-  // Permanent unfixable noise teaches people to ignore the validator exactly
-  // where 139 open notes genuinely need it.
+  // `dod` is required except on closed or rejected tasks.
 
   const entity = [
     "---",

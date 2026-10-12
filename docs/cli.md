@@ -1,34 +1,37 @@
 # CLI
 
-Property Validator includes a standalone CLI tool that runs the same validation engine outside of Obsidian. Useful for CI pipelines, batch processing, or scripting.
+`obsi-validate` runs the same validation as the plugin outside Obsidian: in git hooks, CI and
+scripts.
 
 ## Installation
 
+Requires [Bun](https://bun.sh) 1.3 or later.
+
 ```bash
 bun install
-bun run build:cli    # builds to dist/cli.js
-bun link             # makes obsi-validate available globally
+bun run build:cli    # builds dist/cli.js
+bun link             # puts obsi-validate on your PATH (~/.bun/bin)
 ```
+
+`obsi-validate` runs `dist/cli.js` from the repository, so after pulling changes run
+`bun install && bun run build:cli` again.
 
 ## Usage
 
 ```bash
-# Validate a vault directory
-obsi-validate --vault-dir /path/to/vault
+# Validate a vault
+obsi-validate /path/to/vault
 
-# Validate a single file
-obsi-validate /path/to/vault/my-task.md
+# Validate one note or one folder — the vault root is found automatically
+obsi-validate /path/to/vault/tasks/my-task.md --check-links
 
-# Filter by entity type
-obsi-validate --vault-dir /path/to/vault -t task
+# Only report notes of one type
+obsi-validate /path/to/vault -t task
 
 # JSON output
-obsi-validate --vault-dir /path/to/vault -f json
+obsi-validate /path/to/vault -f json
 
-# Same run, shape-checked by the Zod engine (the plugin engine) instead of mdbase
-obsi-validate --vault-dir /path/to/vault --engine zod
-
-# Compile the vault schema to an mdbase collection (mdbase.yaml + _types/*.md)
+# Compile the schema to an mdbase collection (mdbase.yaml + _types/*.md)
 obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
 ```
 
@@ -36,17 +39,47 @@ obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `[path]` | File or directory to validate | `--vault-dir` value |
-| `--schema-dir <path>` | Path to schema files | from config |
-| `--vault-dir <path>` | Vault root | from config |
-| `-f, --format <type>` | Output: `pretty` or `json` | `pretty` |
-| `-t, --type <entity>` | Filter results by entity type | all |
-| `--check-links` | Also validate body wikilinks and inline properties | off |
-| `--type-key-field <name>` | Frontmatter field identifying the entity type | auto-detected from schema, falls back to `entity` |
-| `--engine <name>` | Shape engine: `mdbase` (JSON Schema via `@callumalpass/mdbase`) or `zod` (the plugin engine, kept as a regression oracle). Bespoke rules (link constraints, expected folder, task intake, body links) run identically on both | `mdbase` |
+| `[path]` | File or folder to validate | the vault |
+| `--vault-dir <path>` | Vault root: the link index, folder rules and printed paths are based on it | the nearest folder above `[path]` that has `_system/entities`, else config `vault_dir` |
+| `--schema-dir <path>` | Folder with `entities/` and `properties/` | `<vault>/_system`, or config `schema_dir` |
+| `-f, --format <type>` | `pretty` or `json` (any other value prints pretty) | `pretty` |
+| `-t, --type <entity>` | Only report and count notes of this type | all |
+| `--type-key-field <name>` | Frontmatter field naming a note's type | config `type_key_field`, else `type_key` if the schema declares it, else `entity` |
+| `--check-links` | Build the link index and check link constraints (`target_*`), body wikilinks and inline properties | off |
+| `--engine <name>` | Shape engine: `mdbase` or `zod` (see [mdbase engine](mdbase.md)) | `mdbase` |
+| `--exclude <dir>` | Folder name to skip, at any depth, in validation and in the link index; repeatable; added to config `exclude_dirs` | — |
 
-Body wikilinks are **not** checked unless you pass `--check-links`. A run without it
-says nothing about broken links.
+Without `--check-links` neither link constraints nor body links are checked, so such a run
+says nothing about links.
+
+Always skipped: dot-folders, `_archive/`, `_skill/` and `_index.md` files. Archived notes still
+count as link targets, by full path.
+
+## Configuration
+
+Settings come from, in order: command-line options, environment variables (`VAULT_DIR`,
+`SCHEMA_DIR`; empty counts as unset), the vault found above an explicitly given path, the config
+file, and finally the vault found above the current folder.
+
+The config file is `$XDG_CONFIG_HOME/obsi-validate/config.json`, or
+`~/.config/obsi-validate/config.json`:
+
+```json
+{
+  "vault_dir": "/path/to/vault",
+  "schema_dir": "/path/to/vault/_system",
+  "type_key_field": "type_key",
+  "default_type": "",
+  "exclude_dirs": ["_templates"]
+}
+```
+
+| Key | Description |
+|-----|-------------|
+| `vault_dir`, `schema_dir` | Used when no path is given, or when no vault is found above it. |
+| `type_key_field` | The type field (see `--type-key-field`). |
+| `default_type` | Type for notes without a type field; empty skips them. Config file only. |
+| `exclude_dirs` | Folder names to skip, like `--exclude`. |
 
 ## `mdbase-export`
 
@@ -54,76 +87,86 @@ says nothing about broken links.
 obsi-validate mdbase-export [--schema-dir <path>] [--out <dir>] [--type-key-field <name>]
 ```
 
-Compiles the entity/property notes into an [mdbase](https://mdbase.dev/) collection:
-`mdbase.yaml` plus one `_types/<entity>.md` per entity, each carrying the entity's resolved
-properties as JSON Schema 2020-12. Output is deterministic and idempotent; the notes stay the
-source of truth and the generated files are never edited by hand. Without `--out` a fresh temp
-directory is used and its path printed. Background and verdict: [mdbase-spike.md](mdbase-spike.md).
-
-## Config file
-
-`~/.config/obsi-validate/config.json`:
-
-```json
-{
-  "schema_dir": "/path/to/vault/System",
-  "vault_dir": "/path/to/vault",
-  "type_key_field": "entity",
-  "default_type": ""
-}
-```
-
-Resolution priority: **CLI flags > config file > defaults**. `schema_dir` and `vault_dir` also accept environment variables (`SCHEMA_DIR`, `VAULT_DIR`).
+Writes an [mdbase](https://mdbase.dev/) collection: `mdbase.yaml` plus one `_types/<entity>.md`
+per entity, holding the entity's resolved properties as JSON Schema 2020-12. Output is the same
+on every run. The schema notes stay the source; never edit the generated files. Without `--out`
+a new temp folder is used and its path printed. See [mdbase engine](mdbase.md).
 
 ## Output
 
-### Pretty format (default)
+### Pretty (default)
+
+Only notes with errors (`FAIL`) or warnings (`WARN`) are listed, by vault path:
 
 ```
-FAIL path/to/note.md [task]
-  ✗ status: Expected 'Backlog' | 'In Progress' | 'Done', received 'Urgent'
-  ⚠ foo: Unknown property for this entity
+FAIL tasks/bad-enum.md [task]
+  ✗ status: Invalid enum value at "status" for type "task"
 
-Total: 10 | Valid: 7 | Invalid: 2 | Skipped: 1
+WARN tasks/unknown-field.md [task]
+  ⚠ colour: Unknown property for this entity
+
+Total: 41 | Valid: 14 | Invalid: 7 | Skipped: 20
 ```
 
-### JSON format
+Messages for value types come from the engine: with `--engine zod` the first error reads
+`Invalid enum value. Expected 'Backlog' | 'In Progress' | …, received 'Doing'`.
+
+### JSON
 
 ```json
 {
-  "total": 10,
-  "valid": 7,
-  "invalid": 2,
-  "skipped": 1,
-  "results": [...]
+  "total": 41,
+  "valid": 14,
+  "invalid": 7,
+  "skipped": 20,
+  "results": [
+    {
+      "file": "/path/to/vault/tasks/bad-enum.md",
+      "entityType": "task",
+      "valid": false,
+      "errors": [{ "field": "status", "message": "…", "expected": "enum", "received": "Doing" }],
+      "warnings": []
+    }
+  ]
 }
 ```
+
+`results` holds only notes with errors or warnings; `file` is an absolute path. Errors found by
+`--check-links` in the body use the fields `__body_link__` and `__inline__<key>`; an
+`expected_folder` error uses `__path__`; unparsable YAML uses `_yaml`.
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | No file has errors — **warnings and skipped files still exit 0** |
-| 1 | At least one file has errors |
+| 0 | No note has errors (warnings and skipped notes still exit 0) |
+| 1 | At least one note has errors, or the run failed (schema could not load, path missing, unknown `--engine`) |
 
 !!! note "Skipped is not validated"
-    An **unknown entity type is an error** (`✗ entity: Unknown entity type: …`, exit `1`).
-    A file with **no** type field at all is `Skipped`: it was never validated, and it
-    still exits `0`. Use `default_type` in the config to give such files a type.
+    An unknown type is an error. A note with no type field at all is `Skipped`: it was not
+    validated, and it does not fail the run. Set `default_type` in the config to give such
+    notes a type. With `--check-links`, a skipped note whose body has a broken link counts as
+    invalid.
 
-## Library API
+## Library
 
-The core validation modules are runtime-agnostic and can be used as a library:
+The validation core can be used from code running on Bun (after `bun run build:cli`, the
+package entry is `dist/index.js`). It takes file contents, not paths:
 
 ```typescript
-import { loadSchema, validateFile, validateFiles } from "obsi-validate";
+import { loadSchema, validateFile, buildIndexFromEntries, resolveTypeKeyField } from "obsi-validate";
 
-const schema = loadSchema(entityFiles, propertyFiles);
+const schema = loadSchema(entityFiles, propertyFiles); // [{ path, content }]
+const typeKeyField = resolveTypeKeyField(schema);      // "type_key" or "entity"
+const vaultIndex = buildIndexFromEntries(notes);       // [{ path, data }], for link checks
+
 const result = validateFile(
-  { path: "task.md", content: "---\nentity: task\nstatus: Done\n---" },
+  { path: "tasks/task.md", content: "---\ntype_key: task\nstatus: Done\n---" },
   schema,
-  { typeKeyField: "entity" }
+  { typeKeyField, vaultIndex, checkLinks: true },
 );
 ```
 
-Input is `{ path: string, content: string }[]` — no file system dependency.
+Also exported: `validateFiles`, `parseEntities`, `parseProperties`, `detectTypeKeyField`,
+`resolveLink`, `parseWikilinkTarget`, `zodShapeEngine`, `mdbaseShapeEngine` (pass as
+`shapeEngine`; the default is Zod) and the types.

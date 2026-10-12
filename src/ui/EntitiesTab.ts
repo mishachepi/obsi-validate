@@ -4,6 +4,33 @@ import type { EntitySchema, VaultSchema, ResolvedProperty } from "../types";
 import { archiveSchemaFile, saveEntity, schemaFilePath } from "../bridge";
 import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName, makeAutoSave } from "./shared";
 
+/** The "add property" row: pick a known property or type a new name. */
+function renderAddPropertyRow(
+  containerEl: HTMLElement,
+  allPropertyNames: string[],
+  properties: Record<string, { required?: boolean }>,
+  onAdded: () => void,
+): void {
+  const addRow = containerEl.createDiv({ cls: "obsi-validate-add-prop-row" });
+  const selectEl = addRow.createEl("select", { cls: "obsi-validate-prop-select" });
+  selectEl.createEl("option", { value: "", text: "Select property..." });
+  for (const pName of allPropertyNames) selectEl.createEl("option", { value: pName, text: pName });
+  const freeInput = addRow.createEl("input", { type: "text", placeholder: "or type name", cls: "obsi-validate-free-input" });
+  const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
+  addBtn.addEventListener("click", () => {
+    const name = selectEl.value || freeInput.value.trim().replace(/\s+/g, "_");
+    if (!name) return;
+    if (name in properties) {
+      new Notice(`Property "${name}" already added.`);
+      return;
+    }
+    properties[name] = {};
+    selectEl.value = "";
+    freeInput.value = "";
+    onAdded();
+  });
+}
+
 /** Render an editable property list into containerEl */
 function renderEditablePropList(
   containerEl: HTMLElement,
@@ -246,29 +273,7 @@ function renderEntityItem(
   const propsListEl = content.createDiv({ cls: "obsi-validate-prop-list" });
   renderEditablePropList(propsListEl, properties, autoSave);
 
-  // Add property
-  const addRow = content.createDiv({ cls: "obsi-validate-add-prop-row" });
-  const selectEl = addRow.createEl("select", { cls: "obsi-validate-prop-select" });
-  selectEl.createEl("option", { value: "", text: "Select property..." });
-  for (const pName of allPropertyNames) {
-    selectEl.createEl("option", { value: pName, text: pName });
-  }
-  const freeInput = addRow.createEl("input", {
-    type: "text",
-    placeholder: "or type name",
-    cls: "obsi-validate-free-input",
-  });
-  const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
-  addBtn.addEventListener("click", () => {
-    const name = selectEl.value || freeInput.value.trim().replace(/\s+/g, "_");
-    if (!name) return;
-    if (name in properties) {
-      new Notice(`Property "${name}" already added.`);
-      return;
-    }
-    properties[name] = {};
-    selectEl.value = "";
-    freeInput.value = "";
+  renderAddPropertyRow(content, allPropertyNames, properties, () => {
     autoSave();
     renderEditablePropList(propsListEl, properties, autoSave);
   });
@@ -371,30 +376,7 @@ function renderNewEntityForm(
 
   const propsListEl = form.createDiv({ cls: "obsi-validate-prop-list" });
 
-  const addRow = form.createDiv({ cls: "obsi-validate-add-prop-row" });
-  const selectEl = addRow.createEl("select", { cls: "obsi-validate-prop-select" });
-  selectEl.createEl("option", { value: "", text: "Select property..." });
-  for (const pName of allPropertyNames) {
-    selectEl.createEl("option", { value: pName, text: pName });
-  }
-  const freeInput = addRow.createEl("input", {
-    type: "text",
-    placeholder: "or type name",
-    cls: "obsi-validate-free-input",
-  });
-  const addBtn = addRow.createEl("button", { text: "Add", cls: "obsi-validate-add-btn" });
-  addBtn.addEventListener("click", () => {
-    const pName = selectEl.value || freeInput.value.trim().replace(/\s+/g, "_");
-    if (!pName) return;
-    if (pName in properties) {
-      new Notice(`Property "${pName}" already added.`);
-      return;
-    }
-    properties[pName] = {};
-    selectEl.value = "";
-    freeInput.value = "";
-    renderEditablePropList(propsListEl, properties);
-  });
+  renderAddPropertyRow(form, allPropertyNames, properties, () => renderEditablePropList(propsListEl, properties));
 
   const actions = form.createDiv({ cls: "obsi-validate-action-bar" });
   const createBtn = actions.createEl("button", { text: "Create", cls: "mod-cta" });

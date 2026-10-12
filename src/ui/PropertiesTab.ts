@@ -33,6 +33,29 @@ const PROPERTY_TYPES = [
   "any",
 ];
 
+/** Min / max / unit fields for a number property. */
+function renderNumberEditor(
+  containerEl: HTMLElement,
+  values: { min?: number; max?: number; unit?: string },
+  onChange: (values: { min?: number; max?: number; unit?: string }) => void,
+): void {
+  const current = { ...values };
+  const field = (label: string, placeholder: string, value: string, apply: (raw: string) => void) =>
+    new Setting(containerEl).setName(label).addText((text) =>
+      text
+        .setValue(value)
+        .setPlaceholder(placeholder)
+        .onChange((raw) => {
+          apply(raw);
+          onChange({ ...current });
+        }),
+    );
+  const num = (raw: string) => (raw.trim() ? Number(raw) : undefined);
+  field("Min value", "none", current.min != null ? String(current.min) : "", (raw) => (current.min = num(raw)));
+  field("Max value", "none", current.max != null ? String(current.max) : "", (raw) => (current.max = num(raw)));
+  field("Unit", "optional", current.unit ?? "", (raw) => (current.unit = raw || undefined));
+}
+
 export async function renderPropertiesTab(
   containerEl: HTMLElement,
   plugin: ObsiValidatePlugin,
@@ -165,33 +188,10 @@ function renderPropertyItem(
         autoSave();
       });
     } else if (currentType === "number") {
-      new Setting(constraintsEl).setName("Min value").addText((text) =>
-        text
-          .setValue(minValue != null ? String(minValue) : "")
-          .setPlaceholder("none")
-          .onChange((val) => {
-            minValue = val ? Number(val) : undefined;
-            autoSave();
-          }),
-      );
-      new Setting(constraintsEl).setName("Max value").addText((text) =>
-        text
-          .setValue(maxValue != null ? String(maxValue) : "")
-          .setPlaceholder("none")
-          .onChange((val) => {
-            maxValue = val ? Number(val) : undefined;
-            autoSave();
-          }),
-      );
-      new Setting(constraintsEl).setName("Unit").addText((text) =>
-        text
-          .setValue(unit ?? "")
-          .setPlaceholder("optional")
-          .onChange((val) => {
-            unit = val || undefined;
-            autoSave();
-          }),
-      );
+      renderNumberEditor(constraintsEl, { min: minValue, max: maxValue, unit }, (v) => {
+        ({ min: minValue, max: maxValue, unit } = v);
+        autoSave();
+      });
     }
 
     if (isLinkType(currentType)) {
@@ -410,6 +410,7 @@ function renderNewPropertyForm(
   let allowedValues: string[] = [];
   let minValue: number | undefined;
   let maxValue: number | undefined;
+  let unit: string | undefined;
   let customValidator = "";
   let newLinkConstraints: LinkConstraints = {};
 
@@ -441,16 +442,9 @@ function renderNewPropertyForm(
         allowedValues = vals;
       });
     } else if (type === "number") {
-      new Setting(constraintsEl).setName("Min value").addText((text) =>
-        text.setPlaceholder("none").onChange((val) => {
-          minValue = val ? Number(val) : undefined;
-        }),
-      );
-      new Setting(constraintsEl).setName("Max value").addText((text) =>
-        text.setPlaceholder("none").onChange((val) => {
-          maxValue = val ? Number(val) : undefined;
-        }),
-      );
+      renderNumberEditor(constraintsEl, { min: minValue, max: maxValue, unit }, (v) => {
+        ({ min: minValue, max: maxValue, unit } = v);
+      });
     }
 
     if (isLinkType(type)) {
@@ -497,6 +491,7 @@ function renderNewPropertyForm(
         allowed_values: type === "enum" ? allowedValues : undefined,
         min_value: type === "number" ? minValue : undefined,
         max_value: type === "number" ? maxValue : undefined,
+        unit: type === "number" ? unit : undefined,
         custom_validator: customValidator || undefined,
         link_constraints: constraintsToSave(type, newLinkConstraints),
       });

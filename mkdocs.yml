@@ -35,6 +35,7 @@ nav:
   - CLI: cli.md
   - Architecture: architecture.md
   - mdbase engine: mdbase-spike.md
+  - Troubleshooting: troubleshooting.md
 
 markdown_extensions:
   - tables

@@ -17,7 +17,7 @@ Obsidian plugin that validates vault frontmatter against schemas defined in the 
 ## Install
 
 ```bash
-git clone <repo-url> && cd property-validator
+git clone https://github.com/mishachepi/obsi-validate.git && cd obsi-validate
 bun install && bun run build
 ```
 
@@ -40,6 +40,7 @@ obsi-validate --vault-dir /path/to/vault
 - [Schema reference](docs/schema-reference.md) — entity/property file format, types, validation logic
 - [CLI](docs/cli.md) — command-line usage
 - [Architecture](docs/architecture.md) — data flow, modules, security
+- [Troubleshooting](docs/troubleshooting.md) — common problems and what to check
 
 ## TODO
 

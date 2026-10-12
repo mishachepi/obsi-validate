@@ -74,3 +74,31 @@ export function isValidationTarget(relPath: string): boolean {
   const name = relPath.replace(/\\/g, "/").split("/").pop() ?? relPath;
   return name.endsWith(".md") && name !== "_index.md";
 }
+
+/** Build the wikilink index from every linkable file (vault-relative path +
+ * parsed frontmatter; `{}` for canvases and notes whose YAML does not parse —
+ * they still exist as link targets). Path keys always win; basename keys go to
+ * the first file that claims them; aliases fill only names nobody owns. Used
+ * by both the CLI and the plugin so links resolve identically. */
+export function buildIndexFromEntries(
+  entries: ReadonlyArray<{ path: string; data: Record<string, unknown> }>,
+): Map<string, { path: string; data: Record<string, unknown> }> {
+  const index = new Map<string, { path: string; data: Record<string, unknown> }>();
+  // Shortest path first (then alphabetical): an ambiguous [[Name]] resolves
+  // the same way whatever order the caller listed files in, and like Obsidian
+  // prefers the shallower note.
+  const ordered = [...entries].sort(
+    (a, b) => a.path.split("/").length - b.path.split("/").length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
+  for (const entry of ordered) {
+    const { strong, weak } = indexKeysFor(entry.path);
+    for (const key of strong) index.set(key, entry);
+    for (const key of weak) if (!index.has(key)) index.set(key, entry);
+  }
+  for (const entry of ordered) {
+    for (const alias of aliasKeysFor(entry.data)) {
+      if (!index.has(alias)) index.set(alias, entry);
+    }
+  }
+  return index;
+}

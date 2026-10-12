@@ -89,15 +89,8 @@ export function validateFile(
 
   const resolvedProps = schema.entityMap.get(entityType);
   if (!resolvedProps) {
-    // Error, not warning (user/core ruling 2026-07-20, obsi-validate-any-type...
-    // "unknown type_key как error" task): a type_key with no matching entity
-    // file is a schema-integrity breach — typo or undeclared type — the same
-    // class as any other invalid document, not merely notable. Previously
-    // this fell into `warnings` so `invalid` stayed 0 and only the
-    // PostToolUse hook's own dedicated warning-text detection blocked it;
-    // the manual/CI path (bare `obsi-validate` call, no hook involved) saw
-    // exit 0 and silently let a garbage type_key through. Promoting it to
-    // `errors` makes enforcement uniform across every call site.
+    // An unknown type is an error, not a warning: a typo or undeclared type must
+    // fail every caller (hook, CI, manual run) the same way.
     return {
       file: file.path,
       entityType,

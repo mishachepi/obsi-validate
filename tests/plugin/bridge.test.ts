@@ -38,6 +38,12 @@ describe("plugin bridge on the mini vault", () => {
     expect([...index.values()].some((e) => e.path.startsWith("_archive/"))).toBe(false);
   });
 
+  test("the plugin index equals the CLI index rules: broken-YAML notes stay link targets", async () => {
+    const index = await buildVaultIndex(app);
+    expect(index.get("yaml-broken")?.path).toBe("notes/yaml-broken.md");
+    expect(index.get("notes/yaml-broken")?.path).toBe("notes/yaml-broken.md");
+  });
+
   test("folder link rules work on vault paths (owner → people/)", async () => {
     const good = app.vault.getAbstractFileByPath("tasks/good.md");
     expect((await bridgeValidateFile(app, good, schema, opts)).valid).toBe(true);

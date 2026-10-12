@@ -6,7 +6,7 @@ import {
   generatePropertyFrontmatter,
 } from "./ui/yamlWriter";
 import { parseFrontmatter } from "./frontmatter";
-import { aliasKeysFor, isInSkippedDir, isValidationTarget } from "./link-index";
+import { buildIndexFromEntries, isInSkippedDir, isValidationTarget } from "./link-index";
 import type {
   RawFile,
   VaultSchema,
@@ -97,48 +97,20 @@ export async function bridgeValidateFile(
 
 /** Build vault index: normalized note name → frontmatter data */
 export async function buildVaultIndex(app: App): Promise<VaultIndex> {
-  const index: VaultIndex = new Map();
-  const files = app.vault.getMarkdownFiles().filter((f) => !isInSkippedDir(f.path));
   const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
-  for (const file of files) {
-    const content = await app.vault.cachedRead(file);
-    try {
-      const data = parseFrontmatter(content).data;
-      const baseName = file.basename;
-      // Full path always wins (unique key)
-      const pathNoExt = file.path.replace(/\.md$/, "");
-      const entry = { path: file.path, data };
-      entries.push(entry);
-      index.set(pathNoExt, entry);
-      // Basename only if no duplicate — first-wins for ambiguous short links
-      if (!index.has(baseName)) {
-        index.set(baseName, entry);
-      }
-    } catch {
-      // Skip files with YAML errors
-    }
-  }
-  // Alias resolution — same rule as the CLI (link-index.ts:aliasKeysFor): a
-  // note's `aliases:` frontmatter makes it reachable under those names too,
-  // matching what Obsidian's own link resolution already does. Filled only
-  // after every real basename above, so an alias can never shadow another
-  // note's own name.
-  for (const entry of entries) {
-    for (const alias of aliasKeysFor(entry.data)) {
-      if (!index.has(alias)) index.set(alias, entry);
-    }
-  }
-  // Canvas notes are linkable like any other note ([[arch.canvas]]) but are not
-  // markdown, so getMarkdownFiles() misses them and every canvas link reads as
-  // broken. They carry no frontmatter — presence is all that matters here.
   for (const file of app.vault.getFiles()) {
-    if (file.extension !== "canvas" || isInSkippedDir(file.path)) continue;
-    const entry = { path: file.path, data: {} };
-    for (const key of [file.path, file.name]) {
-      if (!index.has(key)) index.set(key, entry);
+    if (isInSkippedDir(file.path)) continue;
+    if (file.extension === "canvas") {
+      entries.push({ path: file.path, data: {} });
+    } else if (file.extension === "md") {
+      let data: Record<string, unknown> = {};
+      try {
+        data = parseFrontmatter(await app.vault.cachedRead(file)).data;
+      } catch {}
+      entries.push({ path: file.path, data });
     }
   }
-  return index;
+  return buildIndexFromEntries(entries);
 }
 
 /** Validate all markdown files in vault */

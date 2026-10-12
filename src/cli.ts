@@ -6,7 +6,7 @@ import { loadSchema, detectTypeKeyField } from "./schema.js";
 import { validateFile } from "./validate.js";
 import { frontmatterBlock, parseFrontmatter } from "./frontmatter.js";
 import { resolveConfig } from "./config.js";
-import { indexKeysFor, aliasKeysFor } from "./link-index.js";
+import { buildIndexFromEntries } from "./link-index.js";
 import { walkMdFiles, walkLinkableFiles, walkSchemaFiles } from "./walk.js";
 import type {
   RawFile,
@@ -192,38 +192,22 @@ program
 
     // Build vault index when check-links is enabled
     if (options.checkLinks) {
-      // Vault index must cover the WHOLE vault for cross-folder link resolution.
-      // Always prefer --vault-dir; only fall back to the target when no flag given.
-      // (Previously, validating a directory indexed only that dir → every link to a
-      //  note outside it, e.g. all Areas from _core, was a false "not found".)
+      // The index covers the whole vault (--vault-dir), not just the target, so
+      // links from the target to notes elsewhere resolve.
       const vaultRoot = options.vaultDir ?? vaultDir;
       const allPaths = await walkLinkableFiles(vaultRoot, excludeDirs);
-      const vaultIndex: VaultIndex = new Map();
       const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
       for (const p of allPaths) {
-        const isCanvas = p.endsWith(".canvas");
         let data: Record<string, unknown> = {};
-        if (!isCanvas) {
-          const fm = await readFrontmatterOnly(p);
+        if (!p.endsWith(".canvas")) {
           try {
-            data = parseFrontmatter(fm).data;
+            data = parseFrontmatter(await readFrontmatterOnly(p)).data;
           } catch {}
         }
         // Vault-relative, like the plugin's TFile.path — folder rules match on it.
-        const entry = { path: relative(vaultRoot, p), data };
-        entries.push(entry);
-        const { strong, weak } = indexKeysFor(relative(vaultRoot, p));
-        for (const key of strong) vaultIndex.set(key, entry);
-        for (const key of weak) if (!vaultIndex.has(key)) vaultIndex.set(key, entry);
+        entries.push({ path: relative(vaultRoot, p), data });
       }
-      // Second pass: alias keys fill gaps only. Every file's own path/basename
-      // is already registered above, so a note can never be shadowed by
-      // another note's alias — only genuinely unclaimed names resolve.
-      for (const entry of entries) {
-        for (const alias of aliasKeysFor(entry.data)) {
-          if (!vaultIndex.has(alias)) vaultIndex.set(alias, entry);
-        }
-      }
+      const vaultIndex: VaultIndex = buildIndexFromEntries(entries);
       validateOpts.vaultIndex = vaultIndex;
     }
     const targetPaths = targetStat.isFile()

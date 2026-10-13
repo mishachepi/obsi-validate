@@ -46,14 +46,19 @@ obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
 | `-t, --type <entity>` | Only report and count notes of this type | all |
 | `--type-key-field <name>` | Frontmatter field naming a note's type | config `type_key_field`, else `type_key` if the schema declares it, else `entity` |
 | `--check-links` | Build the link index and check link constraints (`target_*`), body wikilinks and inline properties | off |
+| `--strict-links` | With `--check-links`: body wikilinks and inline properties that fail are errors, not warnings | off |
 | `--engine <name>` | Shape engine: `mdbase` or `zod` (see [mdbase engine](mdbase.md)) | `mdbase` |
 | `--exclude <dir>` | Folder name to skip, at any depth, in validation and in the link index; repeatable; added to config `exclude_dirs` | — |
 
 Without `--check-links` neither link constraints nor body links are checked, so such a run
-says nothing about links.
+says nothing about links. Link constraints in frontmatter are errors; body wikilinks and inline
+properties are warnings, because a link to a note you have not written yet is normal in
+Obsidian. Use `--strict-links` where they must not exist, e.g. in a hook that checks notes
+written by scripts.
 
-Always skipped: dot-folders, `_archive/`, `_skill/` and `_index.md` files. Archived notes still
-count as link targets, by full path.
+Skipped in folder walks: dot-folders, `_archive/`, `_skill/`, `_index.md` files and the
+template folders set in `.obsidian` (core Templates and Templater). A file passed as `[path]`
+is always validated. Archived notes still count as link targets, by full path.
 
 ## Configuration
 
@@ -100,16 +105,20 @@ Only notes with errors (`FAIL`) or warnings (`WARN`) are listed, by vault path:
 
 ```
 FAIL tasks/bad-enum.md [task]
-  ✗ status: Invalid enum value at "status" for type "task"
+  ✗ status: "Doing" is not an allowed value. Allowed: Backlog, In Progress, Done, Closed, Rejected
+
+WARN tasks/broken-body-link.md [task]
+  ⚠ body: [[No Such Note]] not found in vault
 
 WARN tasks/unknown-field.md [task]
-  ⚠ colour: Unknown property for this entity
+  ⚠ colour: Not a property of task
 
-Total: 41 | Valid: 14 | Invalid: 7 | Skipped: 20
+Total: 41 | Valid: 10 | Invalid: 11 | Skipped: 20
 ```
 
-Messages for value types come from the engine: with `--engine zod` the first error reads
-`Invalid enum value. Expected 'Backlog' | 'In Progress' | …, received 'Doing'`.
+Both engines give the same messages. Problems outside a frontmatter property are labelled by
+where they are: `frontmatter` (YAML), `folder` (`expected_folder`), `body` (a wikilink) and
+`<key> (inline)`.
 
 ### JSON
 
@@ -131,9 +140,9 @@ Messages for value types come from the engine: with `--engine zod` the first err
 }
 ```
 
-`results` holds only notes with errors or warnings; `file` is an absolute path. Errors found by
-`--check-links` in the body use the fields `__body_link__` and `__inline__<key>`; an
-`expected_folder` error uses `__path__`; unparsable YAML uses `_yaml`.
+`results` holds only notes with errors or warnings; `file` is an absolute path. Findings in the
+body use the fields `__body_link__` and `__inline__<key>`; an `expected_folder` error uses
+`__path__`; unparsable YAML uses `_yaml`.
 
 ## Exit codes
 
@@ -145,7 +154,7 @@ Messages for value types come from the engine: with `--engine zod` the first err
 !!! note "Skipped is not validated"
     An unknown type is an error. A note with no type field at all is `Skipped`: it was not
     validated, and it does not fail the run. Set `default_type` in the config to give such
-    notes a type. With `--check-links`, a skipped note whose body has a broken link counts as
+    notes a type. With `--strict-links`, a skipped note whose body has a broken link counts as
     invalid.
 
 ## Library

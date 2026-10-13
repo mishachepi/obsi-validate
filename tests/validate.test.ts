@@ -89,7 +89,7 @@ describe("validateFile", () => {
 
     const result = validateFile(file, schema, opts);
     expect(result.entityType).toBeNull();
-    expect(result.warnings[0].message).toContain("Missing type_key");
+    expect(result.warnings[0].message).toContain("No type_key");
   });
 
   // An unknown type is an error, so every caller (hook, CI, manual run) fails on it.
@@ -714,7 +714,7 @@ describe("inline property coercion", () => {
     };
     const result = validateFile(file, numberSchema(), linkOpts);
     expect(
-      result.errors.find((e) => e.field === "__inline__walk"),
+      result.warnings.find((e) => e.field === "__inline__walk"),
     ).toBeUndefined();
   });
 
@@ -725,7 +725,7 @@ describe("inline property coercion", () => {
     };
     const result = validateFile(file, numberSchema(), linkOpts);
     expect(
-      result.errors.find((e) => e.field === "__inline__walk"),
+      result.warnings.find((e) => e.field === "__inline__walk"),
     ).toBeDefined();
   });
 
@@ -736,7 +736,7 @@ describe("inline property coercion", () => {
     };
     const result = validateFile(file, numberSchema(), linkOpts);
     expect(
-      result.errors.find((e) => e.field === "__inline__done"),
+      result.warnings.find((e) => e.field === "__inline__done"),
     ).toBeUndefined();
   });
 });
@@ -980,14 +980,14 @@ describe("property_patterns — open key families", () => {
   test("a generated key nobody enumerated is accepted", async () => {
     const schema = await schemaWithPatterns();
     const res = validateFile(fileWith(["time_bio_and_energy: 3", "social_hours: 2"]), schema, opts);
-    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    const unknown = res.warnings.filter((w) => w.message.startsWith("Not a property of"));
     expect(unknown).toEqual([]);
   });
 
   test("a field outside every family still warns — patterns are not allow_extra", async () => {
     const schema = await schemaWithPatterns();
     const res = validateFile(fileWith(["totally_unknown_field: 1"]), schema, opts);
-    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    const unknown = res.warnings.filter((w) => w.message.startsWith("Not a property of"));
     expect(unknown.map((w) => w.field)).toEqual(["totally_unknown_field"]);
   });
 
@@ -998,7 +998,7 @@ describe("property_patterns — open key families", () => {
       schema,
       opts,
     );
-    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    const unknown = res.warnings.filter((w) => w.message.startsWith("Not a property of"));
     expect(unknown.map((w) => w.field)).toContain("time_wgg");
   });
 
@@ -1138,8 +1138,8 @@ describe("inline markers honour etl.value_map", () => {
     content: ["---", "type_key: mapped_day", "---", "", body, ""].join("\n"),
   });
 
-  const inlineErrors = (res: { errors: { field: string }[] }) =>
-    res.errors.filter((e) => e.field.startsWith("__inline__"));
+  const inlineErrors = (res: { warnings: { field: string }[] }) =>
+    res.warnings.filter((e) => e.field.startsWith("__inline__"));
 
   const opts2 = { typeKeyField: "type_key", checkLinks: true, vaultIndex: new Map() as never };
 
@@ -1167,5 +1167,35 @@ describe("inline markers honour etl.value_map", () => {
     const res = validateFile(note("- [a] [mood:: good] [walk:: abc]"), schema, opts2);
     const fields = inlineErrors(res).map((e) => e.field);
     expect(fields).not.toContain("__inline__mood");
+  });
+});
+
+describe("messages read like sentences", () => {
+  const schema = loadSchema(
+    [{ path: "entities/t.md", content: "---\nentity_name: t\nproperties:\n  status: {required: true}\n  estimate: {}\n  done: {}\n---\n" }],
+    [
+      { path: "properties/status.md", content: "---\nproperty_name: status\nproperty_type: enum\nallowed_values: [Backlog, Done]\n---\n" },
+      { path: "properties/estimate.md", content: "---\nproperty_name: estimate\nproperty_type: number\nmax_value: 360\n---\n" },
+      { path: "properties/done.md", content: "---\nproperty_name: done\nproperty_type: boolean\n---\n" },
+    ],
+  );
+  const messages = (fm: string) =>
+    validateFile({ path: "n.md", content: `---\nentity: t\n${fm}---\n` }, schema).errors.map((e) => `${e.field}: ${e.message}`);
+
+  test("enum lists the allowed values", () => {
+    expect(messages("status: Doing\n")).toEqual(['status: "Doing" is not an allowed value. Allowed: Backlog, Done']);
+  });
+  test("number range names the bound", () => {
+    expect(messages("status: Done\nestimate: 945\n")).toEqual(["estimate: Must be at most 360, got 945"]);
+  });
+  test("wrong type names what was expected and what was found", () => {
+    expect(messages("status: Done\ndone: [a]\n")).toEqual(["done: Expected true or false, got a list"]);
+  });
+  test("an empty required field is missing, not a type error", () => {
+    expect(messages("status:\n")).toEqual(["status: Required field is missing"]);
+  });
+  test("YAML errors give the reason and the line", () => {
+    const r = validateFile({ path: "n.md", content: "---\nentity: t\nstatus: a\nstatus: b\n---\n" }, schema);
+    expect(r.errors[0].message).toBe("Not valid YAML: duplicated mapping key (line 4)");
   });
 });

@@ -7,8 +7,8 @@
   type** to validate untyped notes.
 - **The YAML does not parse, or the type field is a list.** The dot is hidden; run **Validate
   current file** to see the error.
-- **The note is under `_archive/`, `_skill/` or a dot-folder, or is named `_index.md`.** Such
-  notes are never validated, by the plugin or the CLI.
+- **The note is under `_archive/`, `_skill/`, a dot-folder or the template folder, or is named
+  `_index.md`.** Such notes are never validated, by the plugin or the CLI.
 
 ## "Unknown entity type"
 
@@ -27,18 +27,21 @@ Links resolve the way Obsidian resolves them, so first check whether the link op
   pick another.
 - **An alias** works only if no file has that name.
 
-Markdown links (`[text](path)`) are not checked at all.
+A missing body link is a warning (an error only with the CLI's `--strict-links`); a missing
+link in a frontmatter property with link constraints is an error. Markdown links
+(`[text](path)`) are not checked at all.
 
 ## A link points to the wrong kind of note
 
-`Linked "X" has type_key="repo", expected one of: epic` means `[[X]]` resolves to a different
+`Linked "X" has type repo, expected epic` means `[[X]]` resolves to a different
 note than you meant — usually another note with the same name in a shallower folder. Obsidian
 opens the same note, so the link is wrong in Obsidian too; link by path.
 
-## "YAML parse error"
+## "Not valid YAML"
 
 The frontmatter is not valid YAML — often a duplicate key, an unclosed `[` or `"`, or a `:`
-inside an unquoted value. Nothing else is checked until it parses.
+inside an unquoted value. The message gives the line in the note. Nothing else is checked until
+it parses.
 
 ## The plugin and the CLI disagree
 
@@ -49,8 +52,9 @@ They apply the same rules. Differences come from settings:
 - The type field: the plugin's **Type key field** vs the CLI's `--type-key-field` / config.
 - **Default entity type** (plugin) and `default_type` (CLI config) are separate settings.
 - `exclude_dirs` / `--exclude` exist only in the CLI.
-- The plugin runs the Zod engine and the CLI mdbase by default; verdicts are the same, message
-  wording differs.
+- `--strict-links` makes body findings errors; the plugin always shows them as warnings.
+- The plugin runs the Zod engine and the CLI mdbase by default; verdicts and messages are the
+  same.
 
 With equal settings, a different verdict is a bug worth reporting.
 

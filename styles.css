@@ -168,16 +168,6 @@
   flex: 1;
 }
 
-.obsi-validate-issue-received {
-  font-family: var(--font-monospace);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-  background: var(--background-secondary);
-  padding: 1px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
 /* Entity checkboxes for link constraints */
 .obsi-validate-entity-checkboxes {
   display: flex;

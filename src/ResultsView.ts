@@ -1,6 +1,7 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_RESULTS } from "./plugin-settings";
 import type { ValidationResult } from "./types";
+import { fieldLabel } from "./values";
 import type ObsiValidatePlugin from "./plugin-main";
 
 export class ResultsView extends ItemView {
@@ -111,14 +112,8 @@ export class ResultsView extends ItemView {
       section.createDiv({ text: "Errors", cls: "obsi-validate-section-label obsi-validate-section-error" });
       for (const err of result.errors) {
         const row = section.createDiv({ cls: "obsi-validate-issue-row" });
-        this.renderFieldLink(row, err.field, "obsi-validate-field-error");
+        this.renderField(row, err.field, "obsi-validate-field-error");
         row.createSpan({ text: err.message, cls: "obsi-validate-issue-msg" });
-        if (err.received !== undefined) {
-          row.createSpan({
-            text: JSON.stringify(err.received),
-            cls: "obsi-validate-issue-received",
-          });
-        }
       }
     }
 
@@ -127,21 +122,26 @@ export class ResultsView extends ItemView {
       section.createDiv({ text: "Warnings", cls: "obsi-validate-section-label obsi-validate-section-warn" });
       for (const warn of result.warnings) {
         const row = section.createDiv({ cls: "obsi-validate-issue-row" });
-        this.renderFieldLink(row, warn.field, "obsi-validate-field-warn");
+        this.renderField(row, warn.field, "obsi-validate-field-warn");
         row.createSpan({ text: warn.message, cls: "obsi-validate-issue-msg" });
       }
     }
   }
 
-  /** Render a clickable field name that opens property settings */
-  private renderFieldLink(container: HTMLElement, fieldName: string, colorCls: string) {
+  /** The field's label; a frontmatter property links to its settings. */
+  private renderField(container: HTMLElement, field: string, colorCls: string) {
+    const { label, property } = fieldLabel(field);
+    if (!property) {
+      container.createSpan({ text: label, cls: `obsi-validate-issue-field ${colorCls}` });
+      return;
+    }
     const link = container.createEl("a", {
-      text: fieldName,
+      text: label,
       cls: `obsi-validate-issue-field obsi-validate-field-link ${colorCls}`,
     });
     link.addEventListener("click", (e) => {
       e.preventDefault();
-      this.plugin.openSettingsTab("properties", fieldName);
+      this.plugin.openSettingsTab("properties", property);
     });
   }
 

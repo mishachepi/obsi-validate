@@ -14,15 +14,16 @@ Properties.
 | **Schema directory** | `.` | Folder with `entities/` and `properties/`, relative to the vault root. |
 | **Type key field** | *(empty)* | Frontmatter field naming a note's type. Empty: `type_key` if the schema declares a `type_key` property, else `entity` — the same rule as the CLI. |
 | **Default entity type** | *(empty)* | Type for notes without a type field. Such notes are validated as that type, with a warning. Empty: they are skipped. |
-| **Check links in the note body** | on | Report body wikilinks and inline `[key:: value]` properties that point to missing notes, like the CLI's `--check-links`. |
+| **Check links in the note body** | on | Report, as warnings, body wikilinks and inline `[key:: value]` properties that point to missing notes or break a property rule, like the CLI's `--check-links`. |
 | **Show ribbon icon** | off | A "Validate vault" button in the left sidebar. |
 
 !!! tip
     Keep the schema in its own folder, e.g. `_system`.
 
 !!! note "What is never validated"
-    The plugin and the CLI skip the same notes: anything under a dot-folder, `_archive/` or
-    `_skill/`, and `_index.md` files. Archived notes are still link targets by full path, but
+    The plugin and the CLI skip the same notes: anything under a dot-folder, `_archive/`,
+    `_skill/` or the template folder (set in the core Templates or the Templater plugin), and
+    `_index.md` files. Archived notes are still link targets by full path, but
     never win a bare name over a live note. Schema loading also skips `_deprecated/`.
 
 The CLI's `exclude_dirs` / `--exclude` have no plugin setting.
@@ -102,7 +103,7 @@ add it to the child's own list. Full format: [Schema reference > Entity files](s
 Properties are grouped by subfolder. Expand one to edit:
 
 - **Type** and the fields for that type
-- **Nullable**
+- **Nullable** — an empty value counts as filled in, for a required field
 - **Custom validator** — a broken expression is not saved
 - **Open file** / **Archive**
 

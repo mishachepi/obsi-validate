@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { program } from "commander";
+import { readFileSync } from "fs";
 import { readFile, stat } from "fs/promises";
 import { isAbsolute, join, relative } from "path";
 import { resolveConfig, type Config } from "./config.js";
@@ -8,6 +9,8 @@ import { buildIndexFromEntries } from "./link-index.js";
 import { loadSchema, resolveTypeKeyField } from "./schema.js";
 import type { RawFile, ValidateOptions, ValidationSummary, VaultIndex, VaultIndexEntry, VaultSchema } from "./types.js";
 import { countResult, validateFile } from "./validate.js";
+import { fieldLabel } from "./values.js";
+import { templateFolders } from "./vault-files.js";
 import { walkSchemaFiles, walkValidationTargets, walkVaultFiles } from "./walk.js";
 
 async function readSchemaFiles(dir: string): Promise<RawFile[]> {
@@ -43,6 +46,18 @@ async function buildLinkIndex(config: Config): Promise<VaultIndex> {
   return buildIndexFromEntries(entries);
 }
 
+/** The vault's template folders, relative to `root`. */
+function templateFoldersUnder(config: Config, root: string): string[] {
+  const read = (file: string) => {
+    try {
+      return readFileSync(join(config.vault_dir, ".obsidian", file), "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+  return templateFolders(read).map((folder) => relative(root, join(config.vault_dir, folder)));
+}
+
 /** Validate files one at a time, keeping only results with errors or warnings. */
 async function validatePaths(paths: string[], schema: VaultSchema, options: ValidateOptions, typeFilter?: string): Promise<ValidationSummary> {
   const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
@@ -62,10 +77,10 @@ function formatPretty(summary: ValidationSummary, vaultDir: string): string {
     return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : file;
   };
   const lines: string[] = [];
-  for (const result of summary.results) {
+  for (const result of [...summary.results].sort((a, b) => a.file.localeCompare(b.file))) {
     lines.push(`\n${result.valid ? "WARN" : "FAIL"} ${shown(result.file)} [${result.entityType ?? "?"}]`);
-    for (const e of result.errors) lines.push(`  ✗ ${e.field}: ${e.message}`);
-    for (const w of result.warnings) lines.push(`  ⚠ ${w.field}: ${w.message}`);
+    for (const e of result.errors) lines.push(`  ✗ ${fieldLabel(e.field).label}: ${e.message}`);
+    for (const w of result.warnings) lines.push(`  ⚠ ${fieldLabel(w.field).label}: ${w.message}`);
   }
   lines.push("", `Total: ${summary.total} | Valid: ${summary.valid} | Invalid: ${summary.invalid} | Skipped: ${summary.skipped}`);
   return lines.join("\n");
@@ -112,6 +127,7 @@ program
   .option("-t, --type <entity>", "report only notes of this type")
   .option("--type-key-field <name>", TYPE_KEY_HELP)
   .option("--check-links", "check link constraints (target_*), body wikilinks and inline properties")
+  .option("--strict-links", "with --check-links: broken body wikilinks and inline properties are errors, not warnings")
   .option("--engine <name>", "shape-validation engine: mdbase | zod", "mdbase")
   .option(
     "--exclude <dir>",
@@ -135,6 +151,7 @@ program
         typeKeyField,
         defaultEntityType: config.default_type || undefined,
         checkLinks: Boolean(options.checkLinks),
+        strictLinks: Boolean(options.strictLinks),
         vaultRoot: config.vault_dir,
       };
       if (options.engine === "mdbase") {
@@ -148,7 +165,7 @@ program
 
       const paths = (await stat(config.target)).isFile()
         ? [config.target]
-        : await walkValidationTargets(config.target, new Set(config.exclude_dirs));
+        : await walkValidationTargets(config.target, new Set(config.exclude_dirs), templateFoldersUnder(config, config.target));
       const summary = await validatePaths(paths, schema, validateOptions, options.type);
 
       console.log(options.format === "json" ? JSON.stringify(summary, null, 2) : formatPretty(summary, config.vault_dir));

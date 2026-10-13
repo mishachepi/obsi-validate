@@ -26,9 +26,11 @@ build in a separate clone when experimenting.
 
 ## Architecture
 
-Validation order (`validate.ts`): YAML → type field → expected folder → shape engine (unknown
-fields, value types, required/required_unless) → custom validators + link constraints → task
-intake → body wikilinks and inline properties (`checkLinks`).
+Validation order (`validate.ts`): YAML → type field → expected folder → normalize values
+(`values.ts`: empty = not set, mdbase-style coercion) → shape engine (unknown fields, value
+types, required/required_unless) → custom validators + link constraints → task intake → body
+wikilinks and inline properties (`checkLinks`; warnings unless `strictLinks`). Messages come
+from `values.ts`, so both engines word them the same.
 
 Core, runtime-agnostic (takes `{path, content}`, no file system): `schema.ts`, `validate.ts`,
 `rules/task-intake.ts`, `link-index.ts` (link parsing, index, Obsidian-style resolution),

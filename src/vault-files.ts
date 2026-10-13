@@ -42,3 +42,31 @@ export function isOutsideVault(path: string, extra?: ReadonlySet<string>): boole
 export function isSchemaFile(path: string): boolean {
   return isValidationTarget(path) && !isInSkippedDir(path, SCHEMA_SKIPPED_DIRS);
 }
+
+/** Settings files (inside the vault's `.obsidian` folder) that name a template
+ * folder: the core Templates plugin and Templater. Templates hold placeholder
+ * values, so notes there are not validated. */
+export const TEMPLATE_SETTINGS: readonly { file: string; key: string }[] = [
+  { file: "templates.json", key: "folder" },
+  { file: "plugins/templater-obsidian/data.json", key: "templates_folder" },
+];
+
+/** Template folders named in the settings files; `read` returns a file's
+ * text, or undefined when it does not exist. */
+export function templateFolders(read: (file: string) => string | undefined): string[] {
+  const folders = new Set<string>();
+  for (const { file, key } of TEMPLATE_SETTINGS) {
+    try {
+      const value = JSON.parse(read(file) ?? "{}")[key];
+      const folder = typeof value === "string" ? value.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "") : "";
+      if (folder) folders.add(folder);
+    } catch {}
+  }
+  return [...folders];
+}
+
+/** True when a path lies inside one of `folders` (vault-relative folder paths). */
+export function isInFolder(path: string, folders: readonly string[]): boolean {
+  const p = path.replace(/\\/g, "/");
+  return folders.some((f) => p.startsWith(`${f}/`));
+}

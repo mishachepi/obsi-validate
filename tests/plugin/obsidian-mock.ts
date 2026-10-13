@@ -49,6 +49,8 @@ export function fakeApp(root: string) {
 
   return {
     vault: {
+      configDir: ".obsidian",
+      adapter: { read: async (p: string) => readFileSync(join(root, p), "utf-8") },
       getFiles: () => scan().files,
       getMarkdownFiles: () => scan().files.filter((f) => f.extension === "md"),
       getAbstractFileByPath: (p: string) => scan().byPath.get(p) ?? null,

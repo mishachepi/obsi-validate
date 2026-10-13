@@ -1,7 +1,7 @@
 /** Directory walks for the CLI, using the same file rules as the plugin (vault-files.ts). */
 import { readdir } from "fs/promises";
 import { join, relative } from "path";
-import { SCHEMA_SKIPPED_DIRS, isInSkippedDir, isOutsideVault, isSchemaFile, isValidationTarget } from "./vault-files.js";
+import { SCHEMA_SKIPPED_DIRS, isInFolder, isInSkippedDir, isOutsideVault, isSchemaFile, isValidationTarget } from "./vault-files.js";
 
 /** Files under `root` whose root-relative path passes `keep`, without
  * descending into folders for which `skipFolder` holds. */
@@ -22,10 +22,11 @@ async function walk(root: string, keep: (path: string) => boolean, skipFolder: (
   return found;
 }
 
-/** Notes to validate: not under dot-folders, `_archive/`, `_skill/` or `exclude`
- * (config `exclude_dirs` + `--exclude`). */
-export function walkValidationTargets(root: string, exclude?: ReadonlySet<string>): Promise<string[]> {
-  return walk(root, isValidationTarget, (p) => isInSkippedDir(p, exclude));
+/** Notes to validate: not under dot-folders, `_archive/`, `_skill/`, `exclude`
+ * (config `exclude_dirs` + `--exclude`) or `folders` (root-relative paths, the
+ * template folders). */
+export function walkValidationTargets(root: string, exclude?: ReadonlySet<string>, folders: readonly string[] = []): Promise<string[]> {
+  return walk(root, isValidationTarget, (p) => isInSkippedDir(p, exclude) || isInFolder(p, folders));
 }
 
 /** Every file a wikilink may resolve to, archived ones included. */

@@ -249,23 +249,16 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       return z.boolean();
 
     case "date":
-      // gray-matter may coerce YYYY-MM-DD to Date objects
-      return z.union([z.string(), z.date()]);
-
-    case "time":
-      return z.string();
-
     case "datetime":
-      return z.union([z.string(), z.date()]);
+    case "time":
+      // Free text: YAML dates arrive as text (values.ts coerceValue).
+      return z.string();
 
     case "enum": {
       if (prop.allowed_values && prop.allowed_values.length > 0) {
-        const vals = prop.allowed_values.map(String);
-        const [first, ...rest] = vals;
-        return z.preprocess(
-          (v) => (typeof v === "number" ? String(v) : v),
-          z.enum([first, ...rest]),
-        );
+        // Values compare as text; numbers arrive as text (values.ts coerceValue).
+        const [first, ...rest] = prop.allowed_values.map(String);
+        return z.enum([first, ...rest]);
       }
       return z.string();
     }
@@ -278,20 +271,11 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
 
     case "list":
       // A scalar counts as a one-item list (`assignee: "[[X]]"` is as legal
-      // as the block form), like "links" above. A mapping or an empty value
-      // where a list belongs still fails.
-      return z.union(
-        [z.array(z.unknown()), z.string(), z.number(), z.boolean()],
-        {
-          errorMap: () => ({
-            message:
-              "Expected a list or a single scalar value (mappings and empty values are not lists)",
-          }),
-        },
-      );
+      // as the block form), like "links" above. A mapping still fails.
+      return z.union([z.array(z.unknown()), z.string(), z.number(), z.boolean()]);
 
     case "emoji":
-      return z.string().emoji({ message: "Must be an emoji" });
+      return z.string().emoji();
 
     case "any":
       // Deliberately unchecked: for properties whose shape varies by note

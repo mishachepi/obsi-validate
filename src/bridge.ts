@@ -16,7 +16,7 @@ import type {
   VaultSchema,
 } from "./types";
 import { countResult, validateFile } from "./validate";
-import { isInSkippedDir, isOutsideVault, isSchemaFile, isValidationTarget } from "./vault-files";
+import { isInFolder, isInSkippedDir, isOutsideVault, isSchemaFile, isValidationTarget, templateFolders, TEMPLATE_SETTINGS } from "./vault-files";
 import { assertSafeVaultPath } from "./vault-path";
 
 // --- Reading ---
@@ -59,6 +59,22 @@ export async function loadSchemaFromVault(app: App, schemaDir: string): Promise<
     [entities, properties].map((folder) => Promise.all(schemaFilesIn(app, folder).map((f) => readNote(app, f)))),
   );
   return loadSchema(entityFiles, propertyFiles);
+}
+
+/** The vault's template folders, from the Templates and Templater settings. */
+export async function readTemplateFolders(app: App): Promise<string[]> {
+  const texts = new Map<string, string>();
+  for (const { file } of TEMPLATE_SETTINGS) {
+    try {
+      texts.set(file, await app.vault.adapter.read(`${app.vault.configDir}/${file}`));
+    } catch {}
+  }
+  return templateFolders((file) => texts.get(file));
+}
+
+/** True for a note the plugin validates: what the CLI walk would pick. */
+export function isNoteToValidate(path: string, templates: readonly string[]): boolean {
+  return isValidationTarget(path) && !isInSkippedDir(path) && !isInFolder(path, templates);
 }
 
 /** True when validation needs the link index: body links are checked, or
@@ -121,7 +137,8 @@ export async function validateNote(app: App, file: TFile, schema: VaultSchema, o
 /** Validate every note the CLI would validate; every result is kept. */
 export async function validateVaultNotes(app: App, schema: VaultSchema, options: ValidateOptions): Promise<ValidationSummary> {
   const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
-  const files = app.vault.getMarkdownFiles().filter((f) => isValidationTarget(f.path) && !isInSkippedDir(f.path));
+  const templates = await readTemplateFolders(app);
+  const files = app.vault.getMarkdownFiles().filter((f) => isNoteToValidate(f.path, templates));
   for (const note of await Promise.all(files.map((f) => readNote(app, f)))) {
     const result = validateFile(note, schema, options);
     countResult(summary, result);

@@ -1,8 +1,7 @@
 /**
  * Parity harness: the same documents through both shape engines, one case per
  * behaviour class of validate.test.ts. A case passes when both engines agree
- * on validity AND on which fields error / warn. Messages are engine-specific
- * by design and are not compared.
+ * on validity, on which fields error / warn, and on the messages.
  *
  * Deliberately NOT covered: task-intake detector and --check-links / inline
  * properties. They are bespoke code that runs byte-identically after the
@@ -54,6 +53,16 @@ const cases: Case[] = [
   { category: "nullable", name: "empty value on nullable number", fm: "type_key: page\ntime_budget:\n", expectValid: true },
   { category: "nullable", name: "null on nullable number", fm: "type_key: page\ntime_budget: null\n", expectValid: true },
   { category: "nullable", name: "wrong type still fails", fm: "type_key: page\ntime_budget: lots\n", expectValid: false },
+  { category: "empty", name: "empty optional enum", fm: T + "priority:\n", expectValid: true },
+  { category: "empty", name: "empty optional number", fm: T + 'estimate: ""\n', expectValid: true },
+  { category: "empty", name: "empty optional boolean", fm: T + "done: null\n", expectValid: true },
+  { category: "empty", name: "empty required field is missing", fm: "type_key: task\nstatus:\ncreated: 2026-01-05\ndod: x\n", expectValid: false },
+  { category: "coercion", name: "numeric text as number", fm: T + 'estimate: "90"\n', expectValid: true },
+  { category: "coercion", name: "numeric text out of range", fm: T + 'estimate: "999"\n', expectValid: false },
+  { category: "coercion", name: "TRUE text as boolean", fm: T + 'done: "TRUE"\n', expectValid: true },
+  { category: "coercion", name: "number as text", fm: "type_key: card\npriority: 1\nnote: 42\n", expectValid: true },
+  { category: "coercion", name: "date as text", fm: "type_key: card\npriority: 1\nnote: 2026-01-05\n", expectValid: true },
+  { category: "coercion", name: "list is not text", fm: "type_key: card\npriority: 1\nnote: [a, b]\n", expectValid: false },
   { category: "required_unless", name: "Closed without dod is valid", fm: "type_key: task\nstatus: Closed\ncreated: 2026-01-05\n", expectValid: true },
   { category: "required_unless", name: "Rejected without dod is valid", fm: "type_key: task\nstatus: Rejected\ncreated: 2026-01-05\n", expectValid: true },
   { category: "required_unless", name: "open without dod is invalid", fm: "type_key: task\nstatus: Backlog\ncreated: 2026-01-05\n", expectValid: false },
@@ -61,7 +70,7 @@ const cases: Case[] = [
   { category: "required_unless", name: "comparison is exact (closed ≠ Closed)", fm: "type_key: task\nstatus: closed\ncreated: 2026-01-05\n", expectValid: false },
   // `dod` is `any` here, so null is a legal value; the point is that the KEY
   // being present satisfies `required` on both engines (the _templates/Task.md case).
-  { category: "required_unless", name: "dod: null keeps the key (template case)", fm: "type_key: task\nstatus: Backlog\ncreated: 2026-01-05\ndod: null\n", expectValid: true },
+  { category: "required_unless", name: "dod: null is not filled in", fm: "type_key: task\nstatus: Backlog\ncreated: 2026-01-05\ndod: null\n", expectValid: false },
   { category: "emoji", name: "emoji passes", fm: 'type_key: card\npriority: 1\nicon: "😀"\n', expectValid: true },
   { category: "emoji", name: "text is not an emoji", fm: "type_key: card\npriority: 1\nicon: abc\n", expectValid: false },
   { category: "required_unless", name: "required: false switches the rule off", fm: "type_key: card\npriority: 2\nestimate: 5\n", expectValid: true },
@@ -87,8 +96,8 @@ describe("mdbase ↔ zod parity (validate.test.ts behaviour classes)", () => {
       const base: ValidateOptions = { typeKeyField: "type_key", vaultIndex: index };
       const shape = (r: ReturnType<typeof validateFile>) => ({
         valid: r.valid,
-        errors: r.errors.map((e) => e.field).sort(),
-        warnings: r.warnings.map((w) => w.field).sort(),
+        errors: r.errors.map((e) => `${e.field}: ${e.message}`).sort(),
+        warnings: r.warnings.map((w) => `${w.field}: ${w.message}`).sort(),
       });
       const zod = shape(validateFile(file, schema, base));
       const md = shape(validateFile(file, schema, { ...base, shapeEngine: mdbase }));

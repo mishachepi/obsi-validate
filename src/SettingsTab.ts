@@ -126,7 +126,7 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Check links in the note body")
-      .setDesc("Also report wikilinks and inline [key:: value] properties in the body that point to missing notes.")
+      .setDesc("Also report, as warnings, body wikilinks and inline [key:: value] properties that point to missing notes or break a property rule.")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.checkLinks).onChange(async (value) => {
           this.plugin.settings.checkLinks = value;

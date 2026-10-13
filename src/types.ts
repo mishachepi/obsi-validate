@@ -176,8 +176,10 @@ export type ValidateOptions = {
   defaultEntityType?: string;
   /** Vault index for cross-file link validation */
   vaultIndex?: VaultIndex;
-  /** When true, also validate body wikilinks and inline properties */
+  /** When true, also check body wikilinks and inline properties */
   checkLinks?: boolean;
+  /** Report body wikilink and inline-property findings as errors, not warnings */
+  strictLinks?: boolean;
   /** Vault root when file paths are absolute (CLI); folder rules compare
    * vault-relative paths. Plugin paths are already vault-relative. */
   vaultRoot?: string;

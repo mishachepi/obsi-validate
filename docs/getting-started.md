@@ -165,15 +165,15 @@ The status bar shows a green dot — the note is valid.
 ### 5. See validation in action
 
 Change `status` to `Urgent`. The status bar turns red; click it to open the results panel,
-which shows the field, the message and the value:
+which shows the field and the message:
 
 ```
-status   Invalid enum value. Expected 'Backlog' | 'In Progress' | 'Done', received 'Urgent'
+status   "Urgent" is not an allowed value. Allowed: Backlog, In Progress, Done
 ```
 
 ![Invalid note](assets/screenshots/invalid-note.png)
 
-Remove the `status` field entirely. Since it's required, you get:
+Clear the value of `status`, or remove the field. Since it's required, you get:
 
 ```
 ✗ status: Required field is missing
@@ -185,7 +185,7 @@ Remove the `status` field entirely. Since it's required, you get:
 
 Run **Validate vault** from the Command Palette. The panel shows counts and lists the notes
 with errors or warnings. Notes without a type field are listed as warnings
-(`Missing entity, skipped`).
+(`No entity, not validated`).
 
 ![Vault scan](assets/screenshots/vault-scan.png)
 

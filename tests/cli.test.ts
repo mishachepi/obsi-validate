@@ -50,10 +50,10 @@ const EXPECTED: Record<string, [boolean, string[], string[]]> = {
   "notes/yaml-broken-noeol.md": [false, ["_yaml"], []], // same text in link index and target: no parse cache
   "tasks/bad-code.md": [false, ["code"], []], // custom_validator returning a message
   "tasks/bad-enum.md": [false, ["status"], []],
-  "tasks/broken-body-link.md": [false, ["__body_link__"], []],
+  "tasks/broken-body-link.md": [true, [], ["__body_link__"]], // body links warn; --strict-links makes them errors
   "tasks/epic-points-at-area.md": [false, ["epic"], []], // target_type_key
   "tasks/estimate-too-big.md": [false, ["estimate"], []], // max_value; _deprecated string twin ignored
-  "tasks/inline-epic-wrong.md": [false, ["__inline__epic"], []], // [epic:: [[Work]]] in the body
+  "tasks/inline-epic-wrong.md": [true, [], ["__inline__epic"]], // [epic:: [[Work]]] in the body
   "tasks/missing-dod.md": [false, ["dod"], []], // required_unless, open status
   "tasks/owner-outside-people.md": [false, ["owner"], []], // target_folder
   "tasks/reviewer-without-email.md": [false, ["reviewer"], []], // target_has_property
@@ -71,15 +71,22 @@ describe("CLI on the mini vault", () => {
     });
   }
 
+  test("--strict-links turns body findings into errors", () => {
+    const v = verdicts(runJson(VAULT, "--schema-dir", SCHEMA, "--check-links", "--strict-links").summary);
+    expect(v["tasks/broken-body-link.md"]).toEqual([false, ["__body_link__"], []]);
+    expect(v["tasks/inline-epic-wrong.md"]).toEqual([false, ["__inline__epic"], []]);
+  });
+
   test("default engine is mdbase and agrees with zod", () => {
     const dflt = runJson(VAULT, "--schema-dir", SCHEMA, "--check-links").summary;
     const zod = runJson(VAULT, "--schema-dir", SCHEMA, "--check-links", "--engine", "zod").summary;
     expect(verdicts(dflt)).toEqual(verdicts(zod));
   });
 
-  test("_archive/, _index.md and schema files are never validated", () => {
+  test("_archive/, _index.md, template folders and schema files are never validated", () => {
     const { summary } = runJson(VAULT, "--schema-dir", SCHEMA);
     const files = summary.results.map((r) => r.file);
+    expect(files.some((f) => f.includes("/_templates/"))).toBe(false); // .obsidian/templates.json
     expect(files.some((f) => f.includes("/_archive/"))).toBe(false);
     expect(files.some((f) => f.endsWith("_index.md"))).toBe(false);
   });

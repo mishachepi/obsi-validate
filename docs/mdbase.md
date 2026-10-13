@@ -22,13 +22,10 @@ and `required_unless`. Every other step — YAML, type field, expected folder, c
 link constraints, task intake, body links — is shared code that runs the same way whichever
 engine is used. The plugin uses the Zod engine; `--engine zod` selects it in the CLI.
 
-The two engines give the same verdicts. `tests/mdbase/parity.test.ts` runs every behaviour
-class through both and fails on any difference. Messages differ in wording:
-
-| Problem | mdbase | Zod |
-|---------|--------|-----|
-| value not in `allowed_values` | `Invalid enum value at "status" for type "task"` | `Invalid enum value. Expected 'Backlog' \| …, received 'Doing'` |
-| number above `max_value` | `Number at "estimate" is too large for type "task"` | `Number must be less than or equal to 360` |
+The two engines give the same verdicts and the same messages: an engine only decides which
+fields fail, and the message is written from the property (`"Doing" is not an allowed value.
+Allowed: …`, `Must be at most 360, got 999`). `tests/mdbase/parity.test.ts` runs every
+behaviour class through both and fails on any difference.
 
 ---
 
@@ -47,7 +44,7 @@ name, and:
 
 | `property_type` | JSON Schema |
 |-----------------|-------------|
-| `string`, `time`, `date`, `datetime`, `link` | `{ type: string }` (dates from YAML are passed as ISO text) |
+| `string`, `time`, `date`, `datetime`, `link` | `{ type: string }` |
 | `number` | `{ type: number }` with `minimum` / `maximum` |
 | `boolean` | `{ type: boolean }` |
 | `enum` | `{ enum: [...] }`, numbers in both spellings (`1` and `"1"`) |
@@ -56,6 +53,10 @@ name, and:
 | `emoji` | `{ type: string, pattern: <emoji only> }` |
 | `any` and unknown types | `{}` (anything) |
 | `nullable: true` | adds `null` to the type |
+
+Before either engine runs, values are normalized the way mdbase's own validator treats them:
+an empty value counts as not set, and values are coerced to the property's type (see
+[Schema reference > Empty values and coercion](schema-reference.md#empty-values-and-coercion)).
 
 Not expressible in mdbase and therefore handled outside the engine: `target_folder`,
 `target_has_property`, `target_property_value`, `custom_validator`, `expected_folder`, the

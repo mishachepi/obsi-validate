@@ -116,10 +116,23 @@ allowed_values:
 | `allowed_values` | list | enum | Allowed values. Numbers compare as text. Without values any text passes. |
 | `min_value`, `max_value` | number | number | Inclusive bounds. |
 | `unit` | string | number | Informational. |
-| `nullable` | boolean | all | An empty value (`null`, `""`, empty YAML) passes, and other checks are skipped for it. |
+| `nullable` | boolean | all | An empty value counts as filled in, so a required field may be left empty. |
 | `custom_validator` | string | all | JavaScript expression (below). |
 | `target_type_key`, `target_folder`, `target_has_property`, `target_property_value` | | link, links, list | Link constraints (below). |
 | `etl.value_map` | map | all | Words that stand for values, e.g. `{good: 8}` for a number. Inline `[key:: good]` values are mapped before checking. |
+
+---
+
+## Empty values and coercion
+
+Values are read the way mdbase reads them, so the format is no stricter than mdbase:
+
+- **Empty is not set.** A field with no value (`status:`), `null` or `""` is treated as
+  absent: an optional field passes, a required one fails with `Required field is missing`
+  (unless the property is `nullable`). No other check runs on an empty value.
+- **Values are coerced** when the intent is clear: a number, `true`/`false` or a date counts
+  as text; numeric text (`"90"`) counts as a number; `"true"`/`"false"` in any case count as
+  booleans. Anything else is checked as written.
 
 ---
 
@@ -127,12 +140,11 @@ allowed_values:
 
 | Type | Valid value |
 |------|-------------|
-| `string` | Text. |
-| `number` | A number, within `min_value` / `max_value`. |
-| `boolean` | `true` or `false`. |
-| `date`, `datetime` | Text or a YAML date. |
-| `time` | Text. |
-| `enum` | One of `allowed_values`. |
+| `string` | Text (numbers, booleans and dates count as text). |
+| `number` | A number or numeric text, within `min_value` / `max_value`. |
+| `boolean` | `true` or `false`, also as text in any case. |
+| `date`, `datetime`, `time` | Text or a YAML date; the format is not checked. |
+| `enum` | One of `allowed_values`, compared as text. |
 | `link` | Text (the wikilink syntax itself is not checked). |
 | `links` | Text or a list of text. |
 | `list` | A list, or a single text, number or boolean (a one-item list). A mapping or an empty value fails. |
@@ -197,8 +209,7 @@ custom_validator: "value % 0.5 === 0 ? true : 'Must be a multiple of 0.5'"
 | anything else | Pass |
 | throws | Warning: `Custom validator error: …` |
 
-It runs for every value present, also when the type check failed (skipped only for an empty
-value of a `nullable` property).
+It runs for every non-empty value, after coercion, also when the type check failed.
 
 !!! warning "Security"
     The expression runs unsandboxed with full JavaScript access (in Obsidian: `window`, `app`;
@@ -219,7 +230,8 @@ value of a `nullable` property).
 5. **Custom validators and link constraints.**
 6. **Task intake** — the built-in rule below.
 7. **Body links** (plugin setting *Check links in the note body*, CLI `--check-links`) —
-   wikilinks and inline properties in the note body.
+   wikilinks and inline properties in the note body; warnings, or errors with the CLI's
+   `--strict-links`.
 
 ### The type field
 
@@ -236,14 +248,14 @@ CLI's `--type-key-field` / config `type_key_field`; else `type_key` if the schem
 
 ### Body links and inline properties
 
-With link checks on, the body is scanned for:
+With link checks on, the body is scanned for the items below. Each problem is a warning — a
+link to a note not written yet is normal in Obsidian — or an error with `--strict-links`.
 
-- **Wikilinks** — each must resolve (error `Broken wikilink: [[X]] not found in vault`). Links
-  inside HTML comments, fenced code blocks and inline code are ignored.
-- **Inline properties** `[key:: value]` — the value is mapped through `etl.value_map`, converted
-  to the property's type (lists split on commas; numbers and booleans when unambiguous) and
-  checked like a frontmatter value; a wikilink value must resolve and meet the property's link
-  constraints.
+- **Wikilinks** — each should resolve (`[[X]] not found in vault`). Links inside HTML
+  comments, fenced code blocks and inline code are ignored.
+- **Inline properties** `[key:: value]` — the value is mapped through `etl.value_map`, coerced
+  to the property's type (lists split on commas) and checked like a frontmatter value; a
+  wikilink value should resolve and meet the property's link constraints.
 
 Not checked: markdown links (`[text](path)`), and links in frontmatter fields that have no link
 constraints.
@@ -270,7 +282,7 @@ Errors make a note invalid; warnings do not.
 | Custom validator returned `false` or a message | :red_circle: Error |
 | Linked note missing or breaking a link constraint | :red_circle: Error |
 | Task-intake rule broken | :red_circle: Error |
-| Broken body wikilink or inline property (link checks on) | :red_circle: Error |
+| Broken body wikilink or inline property (link checks on) | :yellow_circle: Warning (:red_circle: with `--strict-links`) |
 | Unknown field | :yellow_circle: Warning |
 | No type field (skipped) | :yellow_circle: Warning |
 | Default type used | :yellow_circle: Warning |

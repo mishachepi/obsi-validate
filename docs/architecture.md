@@ -52,17 +52,18 @@ flowchart TB
     N["Note"] --> Y["YAML parses?"]
     Y --> T["Type field → entity"]
     T --> F["Expected folder"]
-    F --> SH["Shape: unknown fields, value types,<br/>required / required_unless"]
+    F --> NV["Normalize: empty = not set,<br/>coerce to the property type"]
+    NV --> SH["Shape: unknown fields, value types,<br/>required / required_unless"]
     SH --> B["Custom validators,<br/>link constraints"]
     B --> TI["Task-intake rule"]
-    TI --> L["Body wikilinks and<br/>inline properties (optional)"]
+    TI --> L["Body wikilinks and inline<br/>properties (optional, warnings)"]
     L --> R["Errors + warnings"]
 ```
 
 The **shape** step is a pluggable engine: Zod (validators built from the property notes) or
-mdbase (JSON Schema generated from the same notes; see [mdbase engine](mdbase.md)). Both give
-the same verdicts; the plugin uses Zod and the CLI uses mdbase by default. Every other step is
-shared code and runs the same way under both.
+mdbase (JSON Schema generated from the same notes; see [mdbase engine](mdbase.md)). Both get
+the same normalized values and give the same verdicts and messages; the plugin uses Zod and the
+CLI uses mdbase by default. Every other step is shared code and runs the same way under both.
 
 ---
 
@@ -74,9 +75,9 @@ shared code and runs the same way under both.
 | `validate.ts` | Validate one note (the order above), body links, inline properties |
 | `rules/task-intake.ts` | The task-intake rule |
 | `link-index.ts` | Wikilink parsing, the link index and link resolution |
-| `vault-files.ts` | Which files are validated, linked to, or loaded as schema |
+| `vault-files.ts` | Which files are validated (incl. template folders), linked to, or loaded as schema |
 | `frontmatter.ts` | Frontmatter parsing and the frontmatter/body boundary |
-| `values.ts` | Small value helpers (list, empty) |
+| `values.ts` | Empty values, coercion, messages, field labels |
 | `mdbase/` | Schema → JSON Schema (`translate.ts`), the mdbase engine (`adapter.ts`), `mdbase-export` (`export.ts`) |
 | `index.ts` | Library entry point |
 | `cli.ts`, `config.ts`, `walk.ts` | CLI: options and config file, folder walks |

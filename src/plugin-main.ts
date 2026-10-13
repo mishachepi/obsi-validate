@@ -1,8 +1,7 @@
 import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
 import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
-import { LinkIndexCache, isInSchemaFolders, loadSchemaFromVault, needsLinkIndex, validateNote, validateVaultNotes } from "./bridge";
+import { LinkIndexCache, isInSchemaFolders, isNoteToValidate, loadSchemaFromVault, needsLinkIndex, readTemplateFolders, validateNote, validateVaultNotes } from "./bridge";
 import { resolveTypeKeyField } from "./schema";
-import { isInSkippedDir, isValidationTarget } from "./vault-files";
 import { ResultsView } from "./ResultsView";
 import { VaultResultsView } from "./VaultResultsView";
 import { findView } from "./view-lookup";
@@ -181,7 +180,7 @@ export default class ObsiValidatePlugin extends Plugin {
   /** Validate the active note, or null when there is none to validate. */
   private async validateActiveNote(): Promise<ValidationResult | null> {
     const file = this.app.workspace.getActiveFile();
-    if (!file || !isValidationTarget(file.path) || isInSkippedDir(file.path)) return null;
+    if (!file || !isNoteToValidate(file.path, await readTemplateFolders(this.app))) return null;
     const schema = await this.getSchema();
     return validateNote(this.app, file, schema, await this.validateOptions(schema));
   }

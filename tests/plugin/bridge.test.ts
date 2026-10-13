@@ -66,6 +66,8 @@ describe("plugin bridge on the mini vault", () => {
     expect(Object.keys(verdicts(cli.results, (f) => f)).length).toBeGreaterThan(10);
     expect(verdicts(plugin.results, (f) => f)).toEqual(verdicts(cli.results, (f) => f.slice(VAULT.length + 1)));
     expect(plugin.results.some((r) => r.file.startsWith("_archive/") || r.file.endsWith("_index.md"))).toBe(false);
+    expect(plugin.results.some((r) => r.file.startsWith("_templates/"))).toBe(false); // .obsidian/templates.json
+    expect(bridge.isNoteToValidate("_templates/Task.md", await bridge.readTemplateFolders(app))).toBe(false);
   });
 
   test("archived notes lose names to live ones; broken-YAML notes stay link targets", async () => {

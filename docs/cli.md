@@ -46,14 +46,14 @@ obsi-validate mdbase-export --schema-dir /path/to/vault/_system --out ./mdbase
 | `-t, --type <entity>` | Only report and count notes of this type | all |
 | `--type-key-field <name>` | Frontmatter field naming a note's type | config `type_key_field`, else `type_key` if the schema declares it, else `entity` |
 | `--check-links` | Build the link index and check link constraints (`target_*`), body wikilinks and inline properties | off |
-| `--strict-links` | With `--check-links`: body wikilinks and inline properties that fail are errors, not warnings | off |
+| `--strict-links` | Turns on `--check-links`; body wikilinks and inline properties that fail are errors, not warnings | off |
 | `--engine <name>` | Shape engine: `mdbase` or `zod` (see [mdbase engine](mdbase.md)) | `mdbase` |
 | `--exclude <dir>` | Folder name to skip, at any depth, in validation and in the link index; repeatable; added to config `exclude_dirs` | — |
 
 Without `--check-links` neither link constraints nor body links are checked, so such a run
 says nothing about links. Link constraints in frontmatter are errors; body wikilinks and inline
 properties are warnings, because a link to a note you have not written yet is normal in
-Obsidian. Use `--strict-links` where they must not exist, e.g. in a hook that checks notes
+Obsidian. Use `--strict-links` (it turns on `--check-links` by itself) where they must not exist, e.g. in a hook that checks notes
 written by scripts.
 
 Skipped in folder walks: dot-folders, `_archive/`, `_skill/`, `_index.md` files and the

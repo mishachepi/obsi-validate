@@ -77,6 +77,11 @@ describe("CLI on the mini vault", () => {
     expect(v["tasks/inline-epic-wrong.md"]).toEqual([false, ["__inline__epic"], []]);
   });
 
+  test("--strict-links checks links without --check-links", () => {
+    const v = verdicts(runJson(VAULT, "--schema-dir", SCHEMA, "--strict-links").summary);
+    expect(v["tasks/broken-body-link.md"]).toEqual([false, ["__body_link__"], []]);
+  });
+
   test("default engine is mdbase and agrees with zod", () => {
     const dflt = runJson(VAULT, "--schema-dir", SCHEMA, "--check-links").summary;
     const zod = runJson(VAULT, "--schema-dir", SCHEMA, "--check-links", "--engine", "zod").summary;

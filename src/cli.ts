@@ -127,7 +127,7 @@ program
   .option("-t, --type <entity>", "report only notes of this type")
   .option("--type-key-field <name>", TYPE_KEY_HELP)
   .option("--check-links", "check link constraints (target_*), body wikilinks and inline properties")
-  .option("--strict-links", "with --check-links: broken body wikilinks and inline properties are errors, not warnings")
+  .option("--strict-links", "check links (implies --check-links); broken body wikilinks and inline properties are errors, not warnings")
   .option("--engine <name>", "shape-validation engine: mdbase | zod", "mdbase")
   .option(
     "--exclude <dir>",
@@ -150,7 +150,7 @@ program
       const validateOptions: ValidateOptions = {
         typeKeyField,
         defaultEntityType: config.default_type || undefined,
-        checkLinks: Boolean(options.checkLinks),
+        checkLinks: Boolean(options.checkLinks || options.strictLinks),
         strictLinks: Boolean(options.strictLinks),
         vaultRoot: config.vault_dir,
       };

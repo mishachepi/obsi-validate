@@ -8,7 +8,7 @@ import { frontmatterBlock, parseFrontmatter } from "./frontmatter.js";
 import { buildIndexFromEntries } from "./link-index.js";
 import { loadSchema, resolveTypeKeyField } from "./schema.js";
 import type { RawFile, ValidateOptions, ValidationSummary, VaultIndex, VaultIndexEntry, VaultSchema } from "./types.js";
-import { countResult, validateFile } from "./validate.js";
+import { countResult, emptySummary, validateFile } from "./validate.js";
 import { fieldLabel } from "./values.js";
 import { templateFolders } from "./vault-files.js";
 import { walkSchemaFiles, walkValidationTargets, walkVaultFiles } from "./walk.js";
@@ -60,7 +60,7 @@ function templateFoldersUnder(config: Config, root: string): string[] {
 
 /** Validate files one at a time, keeping only results with errors or warnings. */
 async function validatePaths(paths: string[], schema: VaultSchema, options: ValidateOptions, typeFilter?: string): Promise<ValidationSummary> {
-  const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
+  const summary = emptySummary();
   for (const path of paths) {
     const content = options.checkLinks ? await readFile(path, "utf-8") : await readFrontmatterOnly(path);
     const result = validateFile({ path, content }, schema, options);

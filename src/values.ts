@@ -12,6 +12,11 @@ export function asList(value: unknown): unknown[] {
   return items.filter((v) => !isEmptyValue(v));
 }
 
+/** A value as a mapping, or an empty one when it is not a mapping. */
+export function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 /** A YAML date as text: `YYYY-MM-DD` at midnight UTC, else the full ISO form. */
 function dateText(date: Date): string {
   const iso = date.toISOString();

@@ -46,6 +46,7 @@ export function validateFile(file: RawFile, schema: VaultSchema, options: Valida
     );
   }
 
+  const entityType = ownType ?? options.defaultEntityType;
   const notePath = vaultRelative(file.path, options.vaultRoot);
   const bodyFindings = () =>
     options.checkLinks && options.vaultIndex
@@ -55,7 +56,6 @@ export function validateFile(file: RawFile, schema: VaultSchema, options: Valida
         ]
       : [];
 
-  const entityType = ownType ?? options.defaultEntityType;
   if (!entityType) {
     const findings = bodyFindings();
     const skipped = { field: typeKeyField, message: `No ${typeKeyField}, not validated` };
@@ -278,9 +278,14 @@ export function countResult(summary: Omit<ValidationSummary, "results">, result:
   else summary.invalid++;
 }
 
+/** A summary with nothing counted yet. */
+export function emptySummary(): ValidationSummary {
+  return { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
+}
+
 /** Validate many files; every result is kept. */
 export function validateFiles(files: RawFile[], schema: VaultSchema, options?: ValidateOptions): ValidationSummary {
-  const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
+  const summary = emptySummary();
   for (const file of files) {
     const result = validateFile(file, schema, options);
     countResult(summary, result);

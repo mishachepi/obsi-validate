@@ -1,4 +1,4 @@
-import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
+import { Notice, Plugin, TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
 import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
 import { LinkIndexCache, isInSchemaFolders, isNoteToValidate, loadSchemaFromVault, needsLinkIndex, readTemplateFolders, validateNote, validateVaultNotes } from "./bridge";
 import { resolveTypeKeyField } from "./schema";
@@ -61,24 +61,14 @@ export default class ObsiValidatePlugin extends Plugin {
     this.addCommand({
       id: "show-validation-results",
       name: "Show validation results",
-      callback: () => {
-        this.activateView(VIEW_TYPE_RESULTS).then(() => {
-          const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
-          if (view && this.lastResult) view.renderSingleResult(this.lastResult);
-        });
-      },
+      callback: () => void this.openLastResult(),
     });
 
     // Status bar
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass("obsi-validate-statusbar");
     this.statusBarEl.addEventListener("click", () => {
-      if (this.lastResult) {
-        this.activateView(VIEW_TYPE_RESULTS).then(() => {
-          const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
-          if (view) view.renderSingleResult(this.lastResult!);
-        });
-      }
+      if (this.lastResult) void this.openLastResult();
     });
     this.renderStatusBar();
 
@@ -185,6 +175,12 @@ export default class ObsiValidatePlugin extends Plugin {
     return validateNote(this.app, file, schema, await this.validateOptions(schema));
   }
 
+  /** Open the results panel on the last result. */
+  private async openLastResult() {
+    await this.activateView(VIEW_TYPE_RESULTS);
+    this.showResult(this.lastResult);
+  }
+
   private showResult(result: ValidationResult | null) {
     this.lastResult = result;
     this.renderStatusBar();
@@ -210,19 +206,9 @@ export default class ObsiValidatePlugin extends Plugin {
     }
 
     this.statusBarEl.style.display = "";
-
-    // Status dot
-    let dotCls = "obsi-validate-dot-valid";
-    if (result.errors.length > 0) dotCls = "obsi-validate-dot-error";
-    else if (result.warnings.length > 0) dotCls = "obsi-validate-dot-warn";
-    this.statusBarEl.createSpan({ cls: `obsi-validate-dot ${dotCls}` });
-
-    // Entity type
-    this.statusBarEl.createSpan({
-      text: result.entityType,
-      cls: "obsi-validate-sb-entity",
-    });
-
+    const state = result.errors.length > 0 ? "error" : result.warnings.length > 0 ? "warn" : "valid";
+    this.statusBarEl.createSpan({ cls: `obsi-validate-dot obsi-validate-dot-${state}` });
+    this.statusBarEl.createSpan({ text: result.entityType, cls: "obsi-validate-sb-entity" });
   }
 
   // --- Commands ---
@@ -251,7 +237,7 @@ export default class ObsiValidatePlugin extends Plugin {
       return this.schemaLoadFailed();
     }
     if (!result) {
-      new Notice("Property Validator: this note is not validated (archived, a folder index, or not markdown).");
+      new Notice("Property Validator: this note is not validated (a template, archived, a folder index, or not markdown).");
       return;
     }
     await this.activateView(VIEW_TYPE_RESULTS);
@@ -265,17 +251,11 @@ export default class ObsiValidatePlugin extends Plugin {
   }
 
   updateRibbonIcon() {
-    if (this.settings.showRibbonIcon) {
-      if (!this.ribbonIconEl) {
-        this.ribbonIconEl = this.addRibbonIcon("check-circle", "Validate vault", () => {
-          this.validateVault();
-        });
-      }
-    } else {
-      if (this.ribbonIconEl) {
-        this.ribbonIconEl.detach();
-        this.ribbonIconEl = null;
-      }
+    if (this.settings.showRibbonIcon && !this.ribbonIconEl) {
+      this.ribbonIconEl = this.addRibbonIcon("check-circle", "Validate vault", () => void this.validateVault());
+    } else if (!this.settings.showRibbonIcon && this.ribbonIconEl) {
+      this.ribbonIconEl.detach();
+      this.ribbonIconEl = null;
     }
   }
 
@@ -295,18 +275,15 @@ export default class ObsiValidatePlugin extends Plugin {
   }
 
   private async activateView(viewType: string): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(viewType);
-    if (existing.length === 0) {
-      const leaf = this.app.workspace.getRightLeaf(false);
-      if (leaf) {
-        await leaf.setViewState({ type: viewType, active: true });
-      }
+    const { workspace } = this.app;
+    let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(viewType)[0] ?? null;
+    if (!leaf) {
+      leaf = workspace.getRightLeaf(false);
+      await leaf?.setViewState({ type: viewType, active: true });
     }
-    const leaves = this.app.workspace.getLeavesOfType(viewType);
-    if (leaves.length > 0) {
-      await this.app.workspace.revealLeaf(leaves[0]);
-      await leaves[0].loadIfDeferred?.();
-    }
+    if (!leaf) return;
+    await workspace.revealLeaf(leaf);
+    await leaf.loadIfDeferred?.();
   }
 
   /** Open plugin settings on a specific tab with search pre-filled */
@@ -321,5 +298,4 @@ export default class ObsiValidatePlugin extends Plugin {
       setting.openTabById("property-validator");
     }
   }
-
 }

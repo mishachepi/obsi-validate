@@ -1,6 +1,6 @@
 import { parseFrontmatter } from "./frontmatter.js";
 import { z, type ZodTypeAny } from "zod";
-import { asList } from "./values.js";
+import { asList, asRecord } from "./values.js";
 import type {
   RawFile,
   PropertySchema,
@@ -36,37 +36,18 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
     const { data } = parseFrontmatter(file.content);
     if (!data.property_name) continue;
 
-    const name = String(data.property_name);
-    const folder = folderFromPath(file.path, "properties");
-
-    // Parse link constraints
-    let linkConstraints: LinkConstraints | undefined;
-    if (data.target_type_key || data.target_folder || data.target_has_property || data.target_property_value) {
-      linkConstraints = {
-        target_type_key: data.target_type_key ?? undefined,
-        target_folder: data.target_folder ?? undefined,
-        target_has_property: data.target_has_property ?? undefined,
-        target_property_value: data.target_property_value ?? undefined,
-      };
-    }
-
     const prop: PropertySchema = {
-      name,
+      name: String(data.property_name),
       property_type: data.property_type ?? "string",
       allowed_values: data.allowed_values != null ? (asList(data.allowed_values) as (string | number)[]) : undefined,
       min_value: data.min_value ?? undefined,
       max_value: data.max_value ?? undefined,
       unit: data.unit ?? undefined,
       nullable: data.nullable ?? undefined,
-      link_constraints: linkConstraints,
+      link_constraints: parseLinkConstraints(data),
       custom_validator: data.custom_validator ?? undefined,
-      value_map:
-        data.etl && typeof data.etl === "object" && !Array.isArray(data.etl) &&
-        (data.etl as Record<string, unknown>).value_map &&
-        typeof (data.etl as Record<string, unknown>).value_map === "object"
-          ? ((data.etl as Record<string, unknown>).value_map as Record<string, unknown>)
-          : undefined,
-      folder,
+      value_map: parseValueMap(data.etl),
+      folder: folderFromPath(file.path, "properties"),
       sourcePath: file.path,
     };
 
@@ -78,6 +59,24 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
   return results;
 }
 
+/** The `target_*` keys of a property note, or undefined when it sets none. */
+function parseLinkConstraints(data: Record<string, unknown>): LinkConstraints | undefined {
+  const { target_type_key, target_folder, target_has_property, target_property_value } = data as LinkConstraints;
+  if (!target_type_key && !target_folder && !target_has_property && !target_property_value) return undefined;
+  return {
+    target_type_key: target_type_key ?? undefined,
+    target_folder: target_folder ?? undefined,
+    target_has_property: target_has_property ?? undefined,
+    target_property_value: target_property_value ?? undefined,
+  };
+}
+
+/** `etl.value_map` of a property note, when it is a mapping. */
+function parseValueMap(etl: unknown): Record<string, unknown> | undefined {
+  const map = asRecord(etl).value_map;
+  return map && typeof map === "object" && !Array.isArray(map) ? (map as Record<string, unknown>) : undefined;
+}
+
 /** Parse entity files' frontmatter into EntitySchema[] */
 export function parseEntities(files: RawFile[]): EntitySchema[] {
   const results: EntitySchema[] = [];
@@ -86,23 +85,14 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
     const { data } = parseFrontmatter(file.content);
     if (!data.entity_name) continue;
 
-    const name = String(data.entity_name);
-    const folder = folderFromPath(file.path, "entities");
-
-    // Parse properties block: { propName: { required: true } } or { propName: {} }
-    const rawProps = data.properties ?? {};
+    // `properties` maps a name to its config ({ required: true }); a bare name means {}.
     const properties: Record<string, EntityPropertyConfig> = {};
-
-    for (const [propName, config] of Object.entries(rawProps)) {
-      if (config && typeof config === "object") {
-        properties[propName] = config as EntityPropertyConfig;
-      } else {
-        properties[propName] = {};
-      }
+    for (const [propName, config] of Object.entries(data.properties ?? {})) {
+      properties[propName] = config && typeof config === "object" ? (config as EntityPropertyConfig) : {};
     }
 
     results.push({
-      name,
+      name: String(data.entity_name),
       properties,
       extends: data.extends ?? undefined,
       allow_extra: data.allow_extra ?? undefined,
@@ -110,7 +100,7 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
         ? data.property_patterns.map(String)
         : undefined,
       expected_folder: data.expected_folder ?? undefined,
-      folder,
+      folder: folderFromPath(file.path, "entities"),
       sourcePath: file.path,
     });
   }
@@ -194,12 +184,11 @@ export function loadSchema(
   const propByName = new Map(properties.map((p) => [p.name, p]));
   const inheritance = resolveInheritance(entities);
 
-  // Build entity → resolved properties (with inheritance)
+  const entityByName = new Map(entities.map((e) => [e.name, e]));
   const entityMap = new Map<string, ResolvedProperty[]>();
   const allowExtraMap = new Map<string, boolean>();
-
   const propertyPatternMap = new Map<string, RegExp[]>();
-  const entityByName = new Map(entities.map((e) => [e.name, e]));
+  const expectedFolderMap = new Map<string, string>();
   for (const entity of entities) {
     const { properties: merged, origins } = inheritance.get(entity.name)!;
     const resolved: ResolvedProperty[] = Object.entries(merged).map(([propName, config]) => ({
@@ -213,13 +202,7 @@ export function loadSchema(
     entityMap.set(entity.name, resolved);
     allowExtraMap.set(entity.name, entity.allow_extra ?? false);
     propertyPatternMap.set(entity.name, compilePatterns(entity, entityByName));
-  }
-
-  const expectedFolderMap = new Map<string, string>();
-  for (const entity of entities) {
-    if (entity.expected_folder) {
-      expectedFolderMap.set(entity.name, entity.expected_folder);
-    }
+    if (entity.expected_folder) expectedFolderMap.set(entity.name, entity.expected_folder);
   }
 
   return {
@@ -236,6 +219,11 @@ export function loadSchema(
 function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
   switch (prop.property_type) {
     case "string":
+    case "link":
+    case "date":
+    case "datetime":
+    case "time":
+      // Dates and times are free text: YAML dates arrive as text (values.ts coerceValue).
       return z.string();
 
     case "number": {
@@ -248,12 +236,6 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
     case "boolean":
       return z.boolean();
 
-    case "date":
-    case "datetime":
-    case "time":
-      // Free text: YAML dates arrive as text (values.ts coerceValue).
-      return z.string();
-
     case "enum": {
       if (prop.allowed_values && prop.allowed_values.length > 0) {
         // Values compare as text; numbers arrive as text (values.ts coerceValue).
@@ -262,9 +244,6 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
       }
       return z.string();
     }
-
-    case "link":
-      return z.string();
 
     case "links":
       return z.union([z.string(), z.array(z.string())]);
@@ -277,13 +256,9 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
     case "emoji":
       return z.string().emoji();
 
-    case "any":
-      // Deliberately unchecked: for properties whose shape varies by note
-      // (e.g. prose or a list). Unlike the unknown-type fallback below, this
-      // is an explicit choice by the schema author.
-      return z.unknown();
-
     default:
+      // "any" (a shape that varies by note, chosen by the schema author) and
+      // unknown types are not checked.
       return z.unknown();
   }
 }
@@ -332,7 +307,6 @@ function compilePatterns(
 
   return out;
 }
-
 
 /** Validate and normalize a `required_unless` block. A malformed block
  * throws: silently dropping it would make the field unconditionally required. */

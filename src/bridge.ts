@@ -15,7 +15,8 @@ import type {
   VaultIndexEntry,
   VaultSchema,
 } from "./types";
-import { countResult, validateFile } from "./validate";
+import { validateFile, validateFiles } from "./validate";
+import { asRecord } from "./values";
 import { isInFolder, isInSkippedDir, isOutsideVault, isSchemaFile, isValidationTarget, templateFolders, TEMPLATE_SETTINGS } from "./vault-files";
 import { assertSafeVaultPath } from "./vault-path";
 
@@ -136,15 +137,9 @@ export async function validateNote(app: App, file: TFile, schema: VaultSchema, o
 
 /** Validate every note the CLI would validate; every result is kept. */
 export async function validateVaultNotes(app: App, schema: VaultSchema, options: ValidateOptions): Promise<ValidationSummary> {
-  const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
   const templates = await readTemplateFolders(app);
   const files = app.vault.getMarkdownFiles().filter((f) => isNoteToValidate(f.path, templates));
-  for (const note of await Promise.all(files.map((f) => readNote(app, f)))) {
-    const result = validateFile(note, schema, options);
-    countResult(summary, result);
-    summary.results.push(result);
-  }
-  return summary;
+  return validateFiles(await Promise.all(files.map((f) => readNote(app, f))), schema, options);
 }
 
 // --- Writing schema notes ---
@@ -201,10 +196,6 @@ async function editFrontmatter(app: App, path: string, update: (fm: Record<strin
 function setOrDelete(fm: Record<string, unknown>, key: string, value: unknown): void {
   if (value === undefined || value === "" || value === false) delete fm[key];
   else fm[key] = value;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 /** Write an entity note from the Entities tab. Each property keeps the rest of

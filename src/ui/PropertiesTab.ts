@@ -1,12 +1,8 @@
 import { Notice, Setting } from "obsidian";
 import type ObsiValidatePlugin from "../plugin-main";
-import {
-  ensureSchema,
-  writePropertyFile,
-  deprecateSchemaFile,
-  propertyFilePath,
-} from "../bridge";
-import { ConfirmArchiveModal, filterSchemaList, groupByFolder, isValidSchemaName, makeAutoSave } from "./shared";
+import { archiveSchemaFile, saveProperty, schemaFilePath } from "../bridge";
+import type { LinkConstraints, PropertySchema } from "../types";
+import { ConfirmArchiveModal, constraintsToSave, filterSchemaList, groupByFolder, isLinkType, isValidSchemaName, makeAutoSave } from "./shared";
 
 /** Check custom validator expression syntax without executing it.
  * Uses Function constructor solely for syntax checking — the expression comes from
@@ -37,16 +33,34 @@ const PROPERTY_TYPES = [
   "any",
 ];
 
+/** Min / max / unit fields for a number property. */
+function renderNumberEditor(
+  containerEl: HTMLElement,
+  values: { min?: number; max?: number; unit?: string },
+  onChange: (values: { min?: number; max?: number; unit?: string }) => void,
+): void {
+  const current = { ...values };
+  const field = (label: string, placeholder: string, value: string, apply: (raw: string) => void) =>
+    new Setting(containerEl).setName(label).addText((text) =>
+      text
+        .setValue(value)
+        .setPlaceholder(placeholder)
+        .onChange((raw) => {
+          apply(raw);
+          onChange({ ...current });
+        }),
+    );
+  const num = (raw: string) => (raw.trim() ? Number(raw) : undefined);
+  field("Min value", "none", current.min != null ? String(current.min) : "", (raw) => (current.min = num(raw)));
+  field("Max value", "none", current.max != null ? String(current.max) : "", (raw) => (current.max = num(raw)));
+  field("Unit", "optional", current.unit ?? "", (raw) => (current.unit = raw || undefined));
+}
+
 export async function renderPropertiesTab(
   containerEl: HTMLElement,
   plugin: ObsiValidatePlugin,
 ): Promise<void> {
-  const schema = await ensureSchema(
-    plugin.app,
-    plugin.settings.schemaDir,
-    plugin.schema,
-  );
-  plugin.schema = schema;
+  const schema = await plugin.getSchema();
 
   // Header with New button
   const header = containerEl.createDiv({ cls: "obsi-validate-tab-header" });
@@ -94,7 +108,7 @@ export async function renderPropertiesTab(
 
 function renderPropertyItem(
   containerEl: HTMLElement,
-  prop: { name: string; property_type: string; allowed_values?: (string | number)[]; min_value?: number; max_value?: number; unit?: string; nullable?: boolean; custom_validator?: string; folder?: string; sourcePath?: string; link_constraints?: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } },
+  prop: PropertySchema,
   schema: { entities: { name: string }[] },
   plugin: ObsiValidatePlugin,
 ): void {
@@ -120,26 +134,22 @@ function renderPropertyItem(
   let unit = prop.unit;
   let nullable = prop.nullable ?? false;
   let customValidator = prop.custom_validator ?? "";
-  let linkConstraints = prop.link_constraints ? { ...prop.link_constraints } : {
-    target_type_key: undefined as string | string[] | undefined,
-    target_folder: undefined as string | undefined,
-    target_has_property: undefined as string | undefined,
-    target_property_value: undefined as { property: string; value: string } | undefined,
-  };
+  let linkConstraints: LinkConstraints = { ...prop.link_constraints };
 
+  const path = prop.sourcePath ?? schemaFilePath(plugin.settings.schemaDir, "property", prop.name);
   const autoSave = makeAutoSave(plugin, async () => {
     if (checkValidatorSyntax(customValidator)) return; // don't auto-save broken validators
-    const hasLC = (currentType === "link" || currentType === "links" || currentType === "list") &&
-      (linkConstraints.target_type_key || linkConstraints.target_folder || linkConstraints.target_has_property || linkConstraints.target_property_value);
-    await writePropertyFile(plugin.app, plugin.settings.schemaDir, prop.name, currentType, {
+    await saveProperty(plugin.app, path, {
+      name: prop.name,
+      property_type: currentType,
       allowed_values: currentType === "enum" ? allowedValues : undefined,
       min_value: currentType === "number" ? minValue : undefined,
       max_value: currentType === "number" ? maxValue : undefined,
       unit: currentType === "number" ? unit : undefined,
       nullable: nullable || undefined,
       custom_validator: customValidator || undefined,
-      link_constraints: hasLC ? linkConstraints : undefined,
-    }, prop.sourcePath);
+      link_constraints: constraintsToSave(currentType, linkConstraints),
+    });
   });
 
   // Type dropdown
@@ -178,36 +188,13 @@ function renderPropertyItem(
         autoSave();
       });
     } else if (currentType === "number") {
-      new Setting(constraintsEl).setName("Min value").addText((text) =>
-        text
-          .setValue(minValue != null ? String(minValue) : "")
-          .setPlaceholder("none")
-          .onChange((val) => {
-            minValue = val ? Number(val) : undefined;
-            autoSave();
-          }),
-      );
-      new Setting(constraintsEl).setName("Max value").addText((text) =>
-        text
-          .setValue(maxValue != null ? String(maxValue) : "")
-          .setPlaceholder("none")
-          .onChange((val) => {
-            maxValue = val ? Number(val) : undefined;
-            autoSave();
-          }),
-      );
-      new Setting(constraintsEl).setName("Unit").addText((text) =>
-        text
-          .setValue(unit ?? "")
-          .setPlaceholder("optional")
-          .onChange((val) => {
-            unit = val || undefined;
-            autoSave();
-          }),
-      );
+      renderNumberEditor(constraintsEl, { min: minValue, max: maxValue, unit }, (v) => {
+        ({ min: minValue, max: maxValue, unit } = v);
+        autoSave();
+      });
     }
 
-    if (currentType === "link" || currentType === "links" || currentType === "list") {
+    if (isLinkType(currentType)) {
       renderLinkConstraintsEditor(constraintsEl, linkConstraints, schema, (lc) => {
         linkConstraints = lc;
         autoSave();
@@ -249,10 +236,9 @@ function renderPropertyItem(
 
   archiveBtn.addEventListener("click", () => {
     new ConfirmArchiveModal(plugin.app, "property", prop.name, async () => {
-      const path = prop.sourcePath ?? propertyFilePath(plugin.settings.schemaDir, prop.name);
       try {
-        await deprecateSchemaFile(plugin.app, path);
-        plugin.schema = null;
+        await archiveSchemaFile(plugin.app, path);
+        plugin.invalidateSchema();
         new Notice(`Property "${prop.name}" archived.`);
         details.remove();
       } catch (e) {
@@ -424,8 +410,9 @@ function renderNewPropertyForm(
   let allowedValues: string[] = [];
   let minValue: number | undefined;
   let maxValue: number | undefined;
+  let unit: string | undefined;
   let customValidator = "";
-  let newLinkConstraints: { target_type_key?: string | string[]; target_folder?: string; target_has_property?: string; target_property_value?: { property: string; value: string } } = {};
+  let newLinkConstraints: LinkConstraints = {};
 
   new Setting(form).setName("Name").addText((text) =>
     text.setPlaceholder("e.g. status").onChange((val) => {
@@ -455,19 +442,12 @@ function renderNewPropertyForm(
         allowedValues = vals;
       });
     } else if (type === "number") {
-      new Setting(constraintsEl).setName("Min value").addText((text) =>
-        text.setPlaceholder("none").onChange((val) => {
-          minValue = val ? Number(val) : undefined;
-        }),
-      );
-      new Setting(constraintsEl).setName("Max value").addText((text) =>
-        text.setPlaceholder("none").onChange((val) => {
-          maxValue = val ? Number(val) : undefined;
-        }),
-      );
+      renderNumberEditor(constraintsEl, { min: minValue, max: maxValue, unit }, (v) => {
+        ({ min: minValue, max: maxValue, unit } = v);
+      });
     }
 
-    if (type === "link" || type === "links" || type === "list") {
+    if (isLinkType(type)) {
       renderLinkConstraintsEditor(constraintsEl, newLinkConstraints, schema, (lc) => {
         newLinkConstraints = lc;
       });
@@ -505,16 +485,17 @@ function renderNewPropertyForm(
     }
     createBtn.disabled = true;
     try {
-      const hasLC = (type === "link" || type === "links" || type === "list") &&
-        (newLinkConstraints.target_type_key || newLinkConstraints.target_folder || newLinkConstraints.target_has_property || newLinkConstraints.target_property_value);
-      await writePropertyFile(plugin.app, plugin.settings.schemaDir, name, type, {
+      await saveProperty(plugin.app, schemaFilePath(plugin.settings.schemaDir, "property", name), {
+        name,
+        property_type: type,
         allowed_values: type === "enum" ? allowedValues : undefined,
         min_value: type === "number" ? minValue : undefined,
         max_value: type === "number" ? maxValue : undefined,
+        unit: type === "number" ? unit : undefined,
         custom_validator: customValidator || undefined,
-        link_constraints: hasLC ? newLinkConstraints : undefined,
+        link_constraints: constraintsToSave(type, newLinkConstraints),
       });
-      plugin.schema = null;
+      plugin.invalidateSchema();
       new Notice(`Property "${name}" created.`);
       form.remove();
       // Re-render list

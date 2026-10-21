@@ -1,8 +1,9 @@
 {
 	"name": "obsi-validate",
 	"version": "0.1.0",
-	"description": "Obsidian plugin: validate vault frontmatter against entity/property schemas",
-	"main": "main.js",
+	"description": "Validate Obsidian vault frontmatter against entity/property schemas kept in the vault (Obsidian plugin, CLI, library)",
+	"main": "dist/index.js",
+	"types": "src/index.ts",
 	"type": "module",
 	"bin": {
 		"obsi-validate": "./dist/cli.js"
@@ -24,7 +25,7 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@callumalpass/mdbase": "0.3.0-rc.7",
+		"@callumalpass/mdbase": "0.3.0-rc.9",
 		"commander": "^13.1.0",
 		"gray-matter": "^4.0.3",
 		"obsidian": "latest",

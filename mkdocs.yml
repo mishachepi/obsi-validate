@@ -1,5 +1,5 @@
 site_name: Obsidian Property Validator
-site_description: Obsidian plugin that validates vault frontmatter against entity/property schemas
+site_description: Validate Obsidian frontmatter against a schema kept in the vault — plugin, CLI and library
 site_url: https://obsi-validate.mchep.dev/
 
 repo_url: https://github.com/mishachepi/obsi-validate
@@ -34,7 +34,8 @@ nav:
   - Schema reference: schema-reference.md
   - CLI: cli.md
   - Architecture: architecture.md
-  - mdbase engine: mdbase-spike.md
+  - mdbase engine: mdbase.md
+  - Troubleshooting: troubleshooting.md
 
 markdown_extensions:
   - tables

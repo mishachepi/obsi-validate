@@ -1,5 +1,6 @@
-import matter from "gray-matter";
+import { parseFrontmatter } from "./frontmatter.js";
 import { z, type ZodTypeAny } from "zod";
+import { asList, asRecord } from "./values.js";
 import type {
   RawFile,
   PropertySchema,
@@ -10,9 +11,12 @@ import type {
   VaultSchema,
 } from "./types.js";
 
-/** Derive a name from a schema file path: filename minus the suffix and ".md" */
-function nameFromPath(path: string, suffix: string): string {
-  return path.split("/").pop()?.replace(suffix, "").replace(".md", "") ?? "";
+/** Type field used when neither the caller nor the schema names one. */
+export const DEFAULT_TYPE_KEY_FIELD = "entity";
+
+/** True for an entity or property definition note (they are schema, not notes to validate). */
+export function isSchemaDefinition(data: Record<string, unknown>): boolean {
+  return Boolean(data.entity_name || data.property_name);
 }
 
 /** Folder of a schema file relative to its base directory ("properties" or "entities").
@@ -29,50 +33,48 @@ export function parseProperties(files: RawFile[]): PropertySchema[] {
   const results: PropertySchema[] = [];
 
   for (const file of files) {
-    const { data } = matter(file.content);
-    if (!data.property_name && !data.property_type) continue;
-
-    const name = data.property_name ?? data.name ?? nameFromPath(file.path, "_property.md");
-    const folder = folderFromPath(file.path, "properties");
-
-    // Parse link constraints
-    let linkConstraints: LinkConstraints | undefined;
-    if (data.target_type_key || data.target_folder || data.target_has_property || data.target_property_value) {
-      linkConstraints = {
-        target_type_key: data.target_type_key ?? undefined,
-        target_folder: data.target_folder ?? undefined,
-        target_has_property: data.target_has_property ?? undefined,
-        target_property_value: data.target_property_value ?? undefined,
-      };
-    }
+    const { data } = parseFrontmatter(file.content);
+    if (!data.property_name) continue;
 
     const prop: PropertySchema = {
-      name,
+      name: String(data.property_name),
       property_type: data.property_type ?? "string",
-      allowed_values: data.allowed_values
-        ? toArray(data.allowed_values)
-        : undefined,
+      allowed_values: data.allowed_values != null ? (asList(data.allowed_values) as (string | number)[]) : undefined,
       min_value: data.min_value ?? undefined,
       max_value: data.max_value ?? undefined,
       unit: data.unit ?? undefined,
       nullable: data.nullable ?? undefined,
-      link_constraints: linkConstraints,
+      link_constraints: parseLinkConstraints(data),
       custom_validator: data.custom_validator ?? undefined,
-      value_map:
-        data.etl && typeof data.etl === "object" && !Array.isArray(data.etl) &&
-        (data.etl as Record<string, unknown>).value_map &&
-        typeof (data.etl as Record<string, unknown>).value_map === "object"
-          ? ((data.etl as Record<string, unknown>).value_map as Record<string, unknown>)
-          : undefined,
-      folder,
+      value_map: parseValueMap(data.etl),
+      folder: folderFromPath(file.path, "properties"),
       sourcePath: file.path,
     };
 
     prop.validator = buildPropertyValidator(prop);
+    if (prop.custom_validator) prop.customCheck = compileCustomValidator(prop.custom_validator);
     results.push(prop);
   }
 
   return results;
+}
+
+/** The `target_*` keys of a property note, or undefined when it sets none. */
+function parseLinkConstraints(data: Record<string, unknown>): LinkConstraints | undefined {
+  const { target_type_key, target_folder, target_has_property, target_property_value } = data as LinkConstraints;
+  if (!target_type_key && !target_folder && !target_has_property && !target_property_value) return undefined;
+  return {
+    target_type_key: target_type_key ?? undefined,
+    target_folder: target_folder ?? undefined,
+    target_has_property: target_has_property ?? undefined,
+    target_property_value: target_property_value ?? undefined,
+  };
+}
+
+/** `etl.value_map` of a property note, when it is a mapping. */
+function parseValueMap(etl: unknown): Record<string, unknown> | undefined {
+  const map = asRecord(etl).value_map;
+  return map && typeof map === "object" && !Array.isArray(map) ? (map as Record<string, unknown>) : undefined;
 }
 
 /** Parse entity files' frontmatter into EntitySchema[] */
@@ -80,26 +82,17 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
   const results: EntitySchema[] = [];
 
   for (const file of files) {
-    const { data } = matter(file.content);
-    if (!data.entity_name && !data.properties) continue;
+    const { data } = parseFrontmatter(file.content);
+    if (!data.entity_name) continue;
 
-    const name = data.entity_name ?? data.name ?? nameFromPath(file.path, "_entity.md");
-    const folder = folderFromPath(file.path, "entities");
-
-    // Parse properties block: { propName: { required: true } } or { propName: {} }
-    const rawProps = data.properties ?? {};
+    // `properties` maps a name to its config ({ required: true }); a bare name means {}.
     const properties: Record<string, EntityPropertyConfig> = {};
-
-    for (const [propName, config] of Object.entries(rawProps)) {
-      if (config && typeof config === "object") {
-        properties[propName] = config as EntityPropertyConfig;
-      } else {
-        properties[propName] = {};
-      }
+    for (const [propName, config] of Object.entries(data.properties ?? {})) {
+      properties[propName] = config && typeof config === "object" ? (config as EntityPropertyConfig) : {};
     }
 
     results.push({
-      name,
+      name: String(data.entity_name),
       properties,
       extends: data.extends ?? undefined,
       allow_extra: data.allow_extra ?? undefined,
@@ -107,7 +100,7 @@ export function parseEntities(files: RawFile[]): EntitySchema[] {
         ? data.property_patterns.map(String)
         : undefined,
       expected_folder: data.expected_folder ?? undefined,
-      folder,
+      folder: folderFromPath(file.path, "entities"),
       sourcePath: file.path,
     });
   }
@@ -169,15 +162,15 @@ function resolveInheritance(
   return resolved;
 }
 
-/** Auto-detect the frontmatter field used to discriminate entity types.
- *
- * The vault's own schema reveals the convention: if a property named `type_key`
- * is declared, instances use `type_key:`. Otherwise fall back to the legacy
- * `entity` default. Returns undefined when caller wants no auto-detection.
- */
+/** `type_key` when the schema declares a property of that name, else undefined. */
 export function detectTypeKeyField(schema: VaultSchema): string | undefined {
-  if (schema.properties.some((p) => p.name === "type_key")) return "type_key";
-  return undefined;
+  return schema.properties.some((p) => p.name === "type_key") ? "type_key" : undefined;
+}
+
+/** The type field to use: an explicit setting, else the one the schema
+ * declares, else DEFAULT_TYPE_KEY_FIELD. Shared by the CLI and the plugin. */
+export function resolveTypeKeyField(schema: VaultSchema, explicit?: string): string {
+  return explicit?.trim() || detectTypeKeyField(schema) || DEFAULT_TYPE_KEY_FIELD;
 }
 
 /** Build complete VaultSchema from raw file contents */
@@ -191,50 +184,25 @@ export function loadSchema(
   const propByName = new Map(properties.map((p) => [p.name, p]));
   const inheritance = resolveInheritance(entities);
 
-  // Build entity → resolved properties (with inheritance)
+  const entityByName = new Map(entities.map((e) => [e.name, e]));
   const entityMap = new Map<string, ResolvedProperty[]>();
   const allowExtraMap = new Map<string, boolean>();
-
   const propertyPatternMap = new Map<string, RegExp[]>();
-  const entityByName = new Map(entities.map((e) => [e.name, e]));
+  const expectedFolderMap = new Map<string, string>();
   for (const entity of entities) {
-    const inherited = inheritance.get(entity.name);
-    const mergedProps = inherited?.properties ?? entity.properties;
-    const origins = inherited?.origins ?? new Map<string, string>();
-    const resolved: ResolvedProperty[] = [];
-
-    for (const [propName, config] of Object.entries(mergedProps)) {
-      const propSchema = propByName.get(propName);
-      const inheritedFrom = origins.get(propName);
-
-      if (propSchema) {
-        resolved.push({
-          ...propSchema,
-          required: config.required ?? config.required_unless !== undefined,
-          required_unless: normaliseRequiredUnless(propName, config.required_unless),
-          inheritedFrom,
-        });
-      } else {
-        resolved.push({
-          name: propName,
-          property_type: "unknown",
-          required: config.required ?? config.required_unless !== undefined,
-          required_unless: normaliseRequiredUnless(propName, config.required_unless),
-          inheritedFrom,
-        });
-      }
-    }
+    const { properties: merged, origins } = inheritance.get(entity.name)!;
+    const resolved: ResolvedProperty[] = Object.entries(merged).map(([propName, config]) => ({
+      ...(propByName.get(propName) ?? { name: propName, property_type: "unknown" }),
+      // required_unless implies required, unless `required: false` says otherwise.
+      required: config.required ?? config.required_unless != null,
+      required_unless: normalizeRequiredUnless(propName, config.required_unless),
+      inheritedFrom: origins.get(propName),
+    }));
 
     entityMap.set(entity.name, resolved);
     allowExtraMap.set(entity.name, entity.allow_extra ?? false);
     propertyPatternMap.set(entity.name, compilePatterns(entity, entityByName));
-  }
-
-  const expectedFolderMap = new Map<string, string>();
-  for (const entity of entities) {
-    if (entity.expected_folder) {
-      expectedFolderMap.set(entity.name, entity.expected_folder);
-    }
+    if (entity.expected_folder) expectedFolderMap.set(entity.name, entity.expected_folder);
   }
 
   return {
@@ -251,6 +219,11 @@ export function loadSchema(
 function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
   switch (prop.property_type) {
     case "string":
+    case "link":
+    case "date":
+    case "datetime":
+    case "time":
+      // Dates and times are free text: YAML dates arrive as text (values.ts coerceValue).
       return z.string();
 
     case "number": {
@@ -263,87 +236,51 @@ function buildPropertyValidator(prop: PropertySchema): ZodTypeAny {
     case "boolean":
       return z.boolean();
 
-    case "date":
-      // gray-matter may coerce YYYY-MM-DD to Date objects
-      return z.union([z.string(), z.date()]);
-
-    case "time":
-      return z.string();
-
-    case "datetime":
-      return z.union([z.string(), z.date()]);
-
     case "enum": {
       if (prop.allowed_values && prop.allowed_values.length > 0) {
-        const vals = prop.allowed_values.map(String);
-        const [first, ...rest] = vals;
-        return z.preprocess(
-          (v) => (typeof v === "number" ? String(v) : v),
-          z.enum([first, ...rest]),
-        );
+        // Values compare as text; numbers arrive as text (values.ts coerceValue).
+        const [first, ...rest] = prop.allowed_values.map(String);
+        return z.enum([first, ...rest]);
       }
       return z.string();
     }
-
-    case "link":
-      return z.string();
 
     case "links":
       return z.union([z.string(), z.array(z.string())]);
 
     case "list":
-      // Scalar tolerance (user ruling 18.08): both YAML representations of a
-      // one-element list are legal — `assignee: "[[X]]"` and the block form.
-      // Half the vault is written by hand or by tools that emit the scalar
-      // form; rejecting it ("Expected array, received string") punished a
-      // legal document. A scalar is treated as a one-item list, mirroring
-      // "links" above and the link_constraints walker in validate.ts, which
-      // already coerce scalar↔array. Genuinely broken shapes (a YAML mapping
-      // where a list belongs) still fail.
-      return z.union(
-        [z.array(z.unknown()), z.string(), z.number(), z.boolean()],
-        {
-          errorMap: () => ({
-            message:
-              "Expected a list or a single scalar value (mappings and empty values are not lists)",
-          }),
-        },
-      );
+      // A scalar counts as a one-item list (`assignee: "[[X]]"` is as legal
+      // as the block form), like "links" above. A mapping still fails.
+      return z.union([z.array(z.unknown()), z.string(), z.number(), z.boolean()]);
 
     case "emoji":
-      return z.string().emoji({ message: "Must be an emoji" });
-
-    case "any":
-      // Explicit escape hatch (user ruling 26.08): a property whose legal
-      // shape genuinely varies by record (e.g. `dod` — string prose most of
-      // the time, occasionally a YAML list) opts out of shape-checking
-      // entirely. Distinct from `default` below: this is deliberate, named,
-      // and documented — the default branch exists for schema authors who
-      // typo'd or forgot a type, and must stay silently permissive for
-      // backward compat, but should never be the thing `any` relies on.
-      return z.unknown();
+      return z.string().emoji();
 
     default:
+      // "any" (a shape that varies by note, chosen by the schema author) and
+      // unknown types are not checked.
       return z.unknown();
   }
 }
 
-function toArray(val: unknown): (string | number)[] {
-  if (Array.isArray(val)) return val;
-  if (val != null) return [val as string | number];
-  return [];
+/** Compile a property's `custom_validator` expression once. The expression
+ * sees `value` and returns true to pass, false or a message to fail. It is
+ * code from the vault's own schema and runs unsandboxed. A syntax error is
+ * reported each time the check runs. */
+function compileCustomValidator(expression: string): (value: unknown) => unknown {
+  try {
+    // eslint-disable-next-line no-new-func
+    return new Function("value", `return (${expression})`) as (value: unknown) => unknown;
+  } catch (e) {
+    return () => {
+      throw e;
+    };
+  }
 }
 
-
-/**
- * Compile an entity's `property_patterns`, walking `extends` so a child inherits
- * its parent's families.
- *
- * A malformed regex THROWS rather than being skipped. A pattern that silently
- * compiles to nothing would leave the schema looking configured while every
- * field it was meant to cover kept warning — the failure mode this whole task
- * exists to remove, reintroduced one level up.
- */
+/** Compile an entity's `property_patterns`, walking `extends` so a child
+ * inherits its parent's families. A malformed regex throws: skipping it would
+ * leave the schema looking configured while it matches nothing. */
 function compilePatterns(
   entity: EntitySchema,
   byName: Map<string, EntitySchema>,
@@ -371,16 +308,9 @@ function compilePatterns(
   return out;
 }
 
-
-/**
- * Validate and normalise a `required_unless` block.
- *
- * Throws on a malformed shape rather than ignoring it. A condition silently
- * dropped would make the field unconditionally required again — the schema would
- * look like it carried the exemption while every legacy note kept failing, which
- * is the noise this feature exists to remove.
- */
-function normaliseRequiredUnless(
+/** Validate and normalize a `required_unless` block. A malformed block
+ * throws: silently dropping it would make the field unconditionally required. */
+function normalizeRequiredUnless(
   propName: string,
   raw: unknown,
 ): Record<string, string[]> | undefined {
@@ -393,7 +323,7 @@ function normaliseRequiredUnless(
 
   const out: Record<string, string[]> = {};
   for (const [field, values] of Object.entries(raw as Record<string, unknown>)) {
-    const list = Array.isArray(values) ? values : [values];
+    const list = asList(values);
     if (list.length === 0) {
       throw new Error(
         `Property "${propName}": required_unless.${field} lists no values — ` +

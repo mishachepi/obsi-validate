@@ -2,13 +2,16 @@
 
 ## Installation
 
+Requires [Bun](https://bun.sh) 1.3 or later and Node.js 20 or later (for the plugin build).
+
 1. Build the plugin:
 
     ```bash
+    git clone https://github.com/mishachepi/obsi-validate.git && cd obsi-validate
     bun install && bun run build
     ```
 
-2. Copy to your vault:
+2. Copy it into your vault:
 
     ```bash
     mkdir -p /path/to/vault/.obsidian/plugins/property-validator
@@ -16,7 +19,33 @@
        /path/to/vault/.obsidian/plugins/property-validator/
     ```
 
-3. Enable in Obsidian: **Settings > Community plugins > Property Validator**
+3. Enable it in Obsidian: **Settings > Community plugins > Property Validator**.
+
+For the command-line tool see [CLI](cli.md#installation).
+
+### Keeping a source install up to date
+
+To run the plugin and the CLI straight from a clone, link the plugin files instead of copying
+them; then updating is one script. It is safe to run again on any machine:
+
+```bash
+set -euo pipefail
+REPO="${REPO:-$HOME/obsi-validate}"     # where the clone lives
+VAULT="${VAULT:?set VAULT to your vault folder}"
+
+[ -d "$REPO/.git" ] || git clone https://github.com/mishachepi/obsi-validate.git "$REPO"
+git -C "$REPO" pull --ff-only
+cd "$REPO" && bun install --frozen-lockfile && bun test && bun run build && bun run build:cli
+bun link >/dev/null                      # obsi-validate → $REPO/dist/cli.js
+
+P="$VAULT/.obsidian/plugins/property-validator"; mkdir -p "$P"
+for f in main.js manifest.json styles.css; do ln -sfn "$REPO/$f" "$P/$f"; done
+
+obsi-validate --help > /dev/null && echo "obsi-validate $(git -C "$REPO" rev-parse --short HEAD) installed"
+```
+
+Then reload the plugin in Obsidian (toggle it off and on under **Community plugins**): Obsidian
+keeps the old `main.js` until then.
 
 ---
 
@@ -26,7 +55,7 @@ Create a schema and validate a note in 5 minutes.
 
 ### 1. Set the schema directory
 
-Go to **Settings > Property Validator > Settings** and set the **Schema directory** (e.g. `System`). The plugin creates `entities/` and `properties/` subdirectories automatically.
+Go to **Settings > Property Validator > Settings** and set the **Schema directory** (e.g. `System`). The `entities/` and `properties/` folders are created with your first entity and property.
 
 ![Settings tab](assets/screenshots/settings-tab.png)
 
@@ -37,7 +66,7 @@ Go to **Settings > Property Validator > Settings** and set the **Schema director
 !!! info "What is an entity?"
     An entity is a **note type** — like `task`, `book`, or `person`. It declares which frontmatter fields the note should have.
 
-Open **Settings > Property Validator > Entities** tab and click **Create new entity**.
+Open the **Entities** tab, click **New Entity**, fill in the form and click **Create**.
 
 - **Name**: `task`
 - **Properties**: add `status` (required) and `priority` (optional)
@@ -65,7 +94,7 @@ See [Schema reference > Entity files](schema-reference.md#entity-files) for all 
 !!! info "What is a property?"
     A property is a **validation rule** for a field — it defines what values are allowed.
 
-Open **Settings > Property Validator > Properties** tab and create two properties:
+Open the **Properties** tab and create two properties (**New Property**, then **Create**):
 
 **Status** — an enum with allowed values:
 
@@ -123,7 +152,9 @@ This note is now validated against the task schema.
 ```
 
 !!! note
-    The `entity` field tells the plugin which schema to use. You can change this field name in [Configuration](configuration.md).
+    The `entity` field tells the plugin which entity the note is. If your schema declares a
+    `type_key` property, notes use `type_key:` instead; any other name can be set as
+    **Type key field** in [Configuration](configuration.md).
 
 The status bar shows a green dot — the note is valid.
 
@@ -133,15 +164,16 @@ The status bar shows a green dot — the note is valid.
 
 ### 5. See validation in action
 
-Change `status` to `Urgent` and save. The status bar turns red, and the results panel shows:
+Change `status` to `Urgent`. The status bar turns red; click it to open the results panel,
+which shows the field and the message:
 
 ```
-✗ status: Expected 'Backlog' | 'In Progress' | 'Done', received 'Urgent'
+status   "Urgent" is not an allowed value. Allowed: Backlog, In Progress, Done
 ```
 
 ![Invalid note](assets/screenshots/invalid-note.png)
 
-Remove the `status` field entirely. Since it's required, you get:
+Clear the value of `status`, or remove the field. Since it's required, you get:
 
 ```
 ✗ status: Required field is missing
@@ -151,7 +183,9 @@ Remove the `status` field entirely. Since it's required, you get:
 
 ### 6. Validate the whole vault
 
-Use **Command Palette > Validate vault** to scan all files at once. The summary panel shows counts and lists only files with issues.
+Run **Validate vault** from the Command Palette. The panel shows counts and lists the notes
+with errors or warnings. Notes without a type field are listed as warnings
+(`No entity, not validated`).
 
 ![Vault scan](assets/screenshots/vault-scan.png)
 
@@ -161,3 +195,5 @@ Use **Command Palette > Validate vault** to scan all files at once. The summary 
 
 - [Schema reference](schema-reference.md) — all entity and property fields, types, link constraints, inheritance
 - [Configuration](configuration.md) — plugin settings and schema management UI
+- [CLI](cli.md) — the same checks in git hooks and CI
+- [Troubleshooting](troubleshooting.md)

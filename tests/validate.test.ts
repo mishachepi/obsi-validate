@@ -7,7 +7,7 @@ import {
   validateFiles,
 } from "../src/validate.js";
 import type { VaultIndex } from "../src/types.js";
-import { indexKeysFor, isLinkableFile, aliasKeysFor } from "../src/link-index.js";
+import { aliasKeysFor, buildIndexFromEntries, indexKeysFor, resolveLink } from "../src/link-index.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 async function getSchema() {
@@ -16,7 +16,7 @@ async function getSchema() {
   return loadSchema(entityFiles, propertyFiles);
 }
 
-// Test fixtures use "type_key" as the entity field
+// Test fixtures use "type_key" as the type field
 const opts = { typeKeyField: "type_key" };
 
 describe("validateFile", () => {
@@ -89,12 +89,10 @@ describe("validateFile", () => {
 
     const result = validateFile(file, schema, opts);
     expect(result.entityType).toBeNull();
-    expect(result.warnings[0].message).toContain("Missing type_key");
+    expect(result.warnings[0].message).toContain("No type_key");
   });
 
-  // Error, not warning (user/core ruling 2026-07-20): a typo'd or undeclared
-  // type_key must block every call site (manual CLI included), not just the
-  // PostToolUse hook's own separate warning-text detection.
+  // An unknown type is an error, so every caller (hook, CI, manual run) fails on it.
   test("unknown entity type is an error, invalid=true", async () => {
     const schema = await getSchema();
     const file = {
@@ -325,10 +323,7 @@ describe("link constraints in property values", () => {
     expect(result.errors.find((e) => e.field === "epic")).toBeUndefined();
   });
 
-  // Scalar tolerance for `list` properties (user ruling 18.08): both YAML
-  // representations of a one-element list are legal. `assignee` is
-  // property_type: list and the scalar form used to fail with
-  // "Expected array, received string" on hand-written notes.
+  // A `list` property accepts a single value as a one-item list.
   describe("list property scalar tolerance", () => {
     const listSchema = () =>
       loadSchema(
@@ -350,7 +345,7 @@ describe("link constraints in property values", () => {
       const schema = await listSchema();
       const file = {
         path: "/v/tasks/x.md",
-        content: '---\ntype_key: task\nassignee: "[[Mikhail Chepkin]]"\n---',
+        content: '---\ntype_key: task\nassignee: "[[Alex Example]]"\n---',
       };
       const result = validateFile(file, schema, { typeKeyField: "type_key" });
       expect(result.errors.find((e) => e.field === "assignee")).toBeUndefined();
@@ -364,7 +359,7 @@ describe("link constraints in property values", () => {
           "---",
           "type_key: task",
           "assignee:",
-          '  - "[[Mikhail Chepkin]]"',
+          '  - "[[Alex Example]]"',
           '  - "[[agent-area-vault-tools]]"',
           "---",
         ].join("\n"),
@@ -390,10 +385,7 @@ describe("link constraints in property values", () => {
     });
   });
 
-  // `any` escape hatch (user ruling 26.08, obsi-validate-any-type-escape-hatch):
-  // a property whose legal shape genuinely varies by record (e.g. `dod` —
-  // usually prose, occasionally a YAML checklist) opts out of shape-checking
-  // entirely, instead of `list`'s narrower array-or-scalar tolerance above.
+  // `any`: no shape check, for fields whose shape varies by note (prose or a list).
   describe("any property type — no shape check", () => {
     const anySchema = () =>
       loadSchema(
@@ -511,7 +503,7 @@ describe("link constraints in property values", () => {
           "created: 2026-08-19T10:15:00.000+02:00",
           "created_by:",
           '  - "[[agent-core]]"',
-          '  - "[[Mikhail Chepkin]]"',
+          '  - "[[Alex Example]]"',
           "epic: []",
           "---",
         ].join("\n"),
@@ -536,7 +528,7 @@ describe("link constraints in property values", () => {
       expect(intakeErrors(validateFile(file, schema, opts))).toEqual([]);
     });
 
-    test("area-only anchor passes when epic is absent (user ruling 24.08)", async () => {
+    test("area-only anchor passes when epic is absent", async () => {
       const schema = await taskSchema();
       const file = {
         path: "/v/tasks/area-only.md",
@@ -593,9 +585,7 @@ describe("link constraints in property values", () => {
 
 describe("validateBodyLinks", () => {
   function indexWith(...names: string[]): VaultIndex {
-    const index: VaultIndex = new Map();
-    for (const name of names) index.set(name, { path: `${name}.md`, data: {} });
-    return index;
+    return buildIndexFromEntries(names.map((name) => ({ path: `${name}.md`, data: {} })));
   }
 
   test("table with valid wikilink in cell produces no errors", () => {
@@ -606,11 +596,11 @@ describe("validateBodyLinks", () => {
       "",
       "| Name / Aliases         | Wikilink          |",
       "|:---------------------- |:----------------- |",
-      "| Света, Sveta, Светлана | [[Sveta Efimova]] |",
+      "| Zoë, Zoe, Zoey        | [[Zoe Example]]   |",
       "",
     ].join("\n");
 
-    const errors = validateBodyLinks(content, indexWith("Sveta Efimova"));
+    const errors = validateBodyLinks(content, indexWith("Zoe Example"));
     expect(errors).toHaveLength(0);
   });
 
@@ -631,11 +621,11 @@ describe("validateBodyLinks", () => {
       "| col1 | col2 |",
       "|------|------|",
       "| [[Open | thing |",
-      "| line2 | [[Sveta Efimova]] |",
+      "| line2 | [[Zoe Example]] |",
       "",
     ].join("\n");
 
-    const errors = validateBodyLinks(content, indexWith("Sveta Efimova"));
+    const errors = validateBodyLinks(content, indexWith("Zoe Example"));
     expect(errors).toHaveLength(0);
   });
 
@@ -724,7 +714,7 @@ describe("inline property coercion", () => {
     };
     const result = validateFile(file, numberSchema(), linkOpts);
     expect(
-      result.errors.find((e) => e.field === "__inline__walk"),
+      result.warnings.find((e) => e.field === "__inline__walk"),
     ).toBeUndefined();
   });
 
@@ -735,7 +725,7 @@ describe("inline property coercion", () => {
     };
     const result = validateFile(file, numberSchema(), linkOpts);
     expect(
-      result.errors.find((e) => e.field === "__inline__walk"),
+      result.warnings.find((e) => e.field === "__inline__walk"),
     ).toBeDefined();
   });
 
@@ -746,7 +736,7 @@ describe("inline property coercion", () => {
     };
     const result = validateFile(file, numberSchema(), linkOpts);
     expect(
-      result.errors.find((e) => e.field === "__inline__done"),
+      result.warnings.find((e) => e.field === "__inline__done"),
     ).toBeUndefined();
   });
 });
@@ -787,49 +777,27 @@ describe("validateFiles", () => {
   });
 });
 
-describe("link index keys (canvas + path-style wikilinks)", () => {
-  test("markdown note is reachable by path and by basename", () => {
-    const { strong, weak } = indexKeysFor("_system/entities/_index.md");
-    expect(strong).toEqual(["_system/entities/_index"]);
-    expect(weak).toEqual(["_index"]);
+describe("link index keys", () => {
+  test("a note is reachable by its path and every shorter suffix, lower-cased", () => {
+    expect(indexKeysFor("_system/entities/_index.md")).toEqual(["_system/entities/_index", "entities/_index", "_index"]);
   });
 
-  test("canvas keeps its extension in both spellings", () => {
-    // Obsidian writes [[arch.canvas]] — dropping the extension breaks resolution.
-    const { strong, weak } = indexKeysFor("_system/canvases/arch.canvas");
-    expect(strong).toEqual(["_system/canvases/arch.canvas"]);
-    expect(weak).toEqual(["arch.canvas"]);
+  test("a canvas keeps its extension", () => {
+    expect(indexKeysFor("_system/canvases/arch.canvas")).toEqual(["_system/canvases/arch.canvas", "canvases/arch.canvas", "arch.canvas"]);
   });
 
-  test("root-level note yields the same key twice, harmlessly", () => {
-    const { strong, weak } = indexKeysFor("Note.md");
-    expect(strong).toEqual(["Note"]);
-    expect(weak).toEqual(["Note"]);
+  test("windows separators and case are normalized", () => {
+    expect(indexKeysFor("A\\B\\Note.md")).toEqual(["a/b/note", "b/note", "note"]);
   });
 
-  test("windows separators normalize to forward slashes", () => {
-    expect(indexKeysFor("a\\b\\c.md").strong).toEqual(["a/b/c"]);
-  });
-
-  test("only markdown and canvas are linkable", () => {
-    expect(isLinkableFile("a.md")).toBe(true);
-    expect(isLinkableFile("a.canvas")).toBe(true);
-    expect(isLinkableFile("a.png")).toBe(false);
-    expect(isLinkableFile("a.pdf")).toBe(false);
+  test("other files keep their extension", () => {
+    expect(indexKeysFor("assets/Photo.PNG")).toEqual(["assets/photo.png", "photo.png"]);
   });
 });
 
 describe("wikilink resolution against a path-keyed index", () => {
-  /** Index built the way the CLI builds it: strong keys win, weak are first-wins. */
-  function indexFrom(...relPaths: string[]): VaultIndex {
-    const index: VaultIndex = new Map();
-    for (const rel of relPaths) {
-      const { strong, weak } = indexKeysFor(rel);
-      const entry = { path: rel, data: {} };
-      for (const k of strong) index.set(k, entry);
-      for (const k of weak) if (!index.has(k)) index.set(k, entry);
-    }
-    return index;
+  function indexFrom(...paths: string[]): VaultIndex {
+    return buildIndexFromEntries(paths.map((path) => ({ path, data: {} })));
   }
 
   const body = (link: string) => `---\ntype_key: page\n---\n\nsee ${link}\n`;
@@ -880,12 +848,38 @@ describe("wikilink resolution against a path-keyed index", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("ambiguous basename stays first-wins", () => {
-    const index = indexFrom("a/Dup.md", "b/Dup.md");
-    expect(index.get("Dup")!.path).toBe("a/Dup.md");
-    // …while each full path still resolves to its own file
-    expect(index.get("a/Dup")!.path).toBe("a/Dup.md");
-    expect(index.get("b/Dup")!.path).toBe("b/Dup.md");
+  test("an ambiguous name goes to the shallower note; full paths stay exact", () => {
+    const index = indexFrom("x/b/Dup.md", "a/Dup.md");
+    expect(resolveLink(index, "Dup")!.path).toBe("a/Dup.md");
+    expect(resolveLink(index, "b/Dup")!.path).toBe("x/b/Dup.md");
+    expect(resolveLink(index, "x/b/Dup")!.path).toBe("x/b/Dup.md");
+  });
+
+  test("links resolve case-insensitively and with a .md extension, like Obsidian", () => {
+    const index = indexFrom("Notes/My Note.md");
+    expect(validateBodyLinks(body("[[my note]] [[My Note.md]] [[notes/MY NOTE]]"), index)).toHaveLength(0);
+  });
+
+  test("a path prefix that does not exist does not resolve", () => {
+    expect(validateBodyLinks(body("[[zzz/My Note]]"), indexFrom("Notes/My Note.md"))).toHaveLength(1);
+  });
+
+  test("attachments resolve like notes; a missing one is broken, as in Obsidian", () => {
+    const index = indexFrom("assets/photo.png", "docs/report.pdf");
+    expect(validateBodyLinks(body("![[photo.png]] [[report.pdf]]"), index)).toHaveLength(0);
+    expect(validateBodyLinks(body("![[missing.png]] [[v1.2]]"), index)).toHaveLength(2);
+  });
+
+  test("a file in the linking note's own folder wins an ambiguous name", () => {
+    const index = indexFrom("a/Dup.md", "deep/er/Dup.md");
+    expect(resolveLink(index, "Dup", "deep/er/Note.md")!.path).toBe("deep/er/Dup.md");
+    expect(resolveLink(index, "Dup", "other/Note.md")!.path).toBe("a/Dup.md");
+  });
+
+  test("archived files resolve by path but lose a name to live files", () => {
+    const index = indexFrom("_archive/Work.md", "areas/x/Work.md");
+    expect(resolveLink(index, "Work")!.path).toBe("areas/x/Work.md");
+    expect(resolveLink(index, "_archive/Work")!.path).toBe("_archive/Work.md");
   });
 });
 
@@ -915,25 +909,8 @@ describe("aliasKeysFor — frontmatter alias extraction", () => {
 describe("wikilink resolution — alias-aware index", () => {
   /** Index built the way the CLI builds it post-fix: filename keys first,
    * then a second pass fills alias keys without shadowing real names. */
-  function indexWithAliases(
-    files: Array<{ path: string; aliases?: unknown }>,
-  ): VaultIndex {
-    const index: VaultIndex = new Map();
-    const entries: Array<{ path: string; data: Record<string, unknown> }> = [];
-    for (const f of files) {
-      const data = f.aliases === undefined ? {} : { aliases: f.aliases };
-      const entry = { path: f.path, data };
-      entries.push(entry);
-      const { strong, weak } = indexKeysFor(f.path);
-      for (const k of strong) index.set(k, entry);
-      for (const k of weak) if (!index.has(k)) index.set(k, entry);
-    }
-    for (const entry of entries) {
-      for (const alias of aliasKeysFor(entry.data)) {
-        if (!index.has(alias)) index.set(alias, entry);
-      }
-    }
-    return index;
+  function indexWithAliases(files: Array<{ path: string; aliases?: unknown }>): VaultIndex {
+    return buildIndexFromEntries(files.map((f) => ({ path: f.path, data: f.aliases === undefined ? {} : { aliases: f.aliases } })));
   }
 
   const body = (link: string) => `---\ntype_key: page\n---\n\nsee ${link}\n`;
@@ -949,8 +926,8 @@ describe("wikilink resolution — alias-aware index", () => {
   });
 
   test("scalar aliases field resolves the same as a list", () => {
-    const index = indexWithAliases([{ path: "cmdb/persons/Sveta Efimova.md", aliases: "Света" }]);
-    expect(validateBodyLinks(body("[[Света]]"), index)).toHaveLength(0);
+    const index = indexWithAliases([{ path: "cmdb/persons/Zoe Example.md", aliases: "Zoë" }]);
+    expect(validateBodyLinks(body("[[Zoë]]"), index)).toHaveLength(0);
   });
 
   test("a real note's own name always wins over another note's alias", () => {
@@ -959,7 +936,7 @@ describe("wikilink resolution — alias-aware index", () => {
       { path: "b/Dup.md" },
       { path: "a/Alias.md", aliases: "Dup" },
     ]);
-    expect(index.get("Dup")!.path).toBe("b/Dup.md");
+    expect(resolveLink(index, "Dup")!.path).toBe("b/Dup.md");
   });
 
   test("an alias that matches nothing still errors — not a blanket pass", () => {
@@ -1003,14 +980,14 @@ describe("property_patterns — open key families", () => {
   test("a generated key nobody enumerated is accepted", async () => {
     const schema = await schemaWithPatterns();
     const res = validateFile(fileWith(["time_bio_and_energy: 3", "social_hours: 2"]), schema, opts);
-    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    const unknown = res.warnings.filter((w) => w.message.startsWith("Not a property of"));
     expect(unknown).toEqual([]);
   });
 
   test("a field outside every family still warns — patterns are not allow_extra", async () => {
     const schema = await schemaWithPatterns();
     const res = validateFile(fileWith(["totally_unknown_field: 1"]), schema, opts);
-    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    const unknown = res.warnings.filter((w) => w.message.startsWith("Not a property of"));
     expect(unknown.map((w) => w.field)).toEqual(["totally_unknown_field"]);
   });
 
@@ -1021,7 +998,7 @@ describe("property_patterns — open key families", () => {
       schema,
       opts,
     );
-    const unknown = res.warnings.filter((w) => w.message === "Unknown property for this entity");
+    const unknown = res.warnings.filter((w) => w.message.startsWith("Not a property of"));
     expect(unknown.map((w) => w.field)).toContain("time_wgg");
   });
 
@@ -1037,11 +1014,7 @@ describe("property_patterns — open key families", () => {
 });
 
 describe("required_unless — conditional requirement", () => {
-  // `dod` is required by user ruling, but the rule arrived after history had
-  // accumulated: 196 already-closed notes can never satisfy it, because writing
-  // an acceptance criterion for someone else's finished work is fabrication.
-  // Permanent unfixable noise teaches people to ignore the validator exactly
-  // where 139 open notes genuinely need it.
+  // `dod` is required except on closed or rejected tasks.
 
   const entity = [
     "---",
@@ -1165,8 +1138,8 @@ describe("inline markers honour etl.value_map", () => {
     content: ["---", "type_key: mapped_day", "---", "", body, ""].join("\n"),
   });
 
-  const inlineErrors = (res: { errors: { field: string }[] }) =>
-    res.errors.filter((e) => e.field.startsWith("__inline__"));
+  const inlineErrors = (res: { warnings: { field: string }[] }) =>
+    res.warnings.filter((e) => e.field.startsWith("__inline__"));
 
   const opts2 = { typeKeyField: "type_key", checkLinks: true, vaultIndex: new Map() as never };
 
@@ -1194,5 +1167,35 @@ describe("inline markers honour etl.value_map", () => {
     const res = validateFile(note("- [a] [mood:: good] [walk:: abc]"), schema, opts2);
     const fields = inlineErrors(res).map((e) => e.field);
     expect(fields).not.toContain("__inline__mood");
+  });
+});
+
+describe("messages read like sentences", () => {
+  const schema = loadSchema(
+    [{ path: "entities/t.md", content: "---\nentity_name: t\nproperties:\n  status: {required: true}\n  estimate: {}\n  done: {}\n---\n" }],
+    [
+      { path: "properties/status.md", content: "---\nproperty_name: status\nproperty_type: enum\nallowed_values: [Backlog, Done]\n---\n" },
+      { path: "properties/estimate.md", content: "---\nproperty_name: estimate\nproperty_type: number\nmax_value: 360\n---\n" },
+      { path: "properties/done.md", content: "---\nproperty_name: done\nproperty_type: boolean\n---\n" },
+    ],
+  );
+  const messages = (fm: string) =>
+    validateFile({ path: "n.md", content: `---\nentity: t\n${fm}---\n` }, schema).errors.map((e) => `${e.field}: ${e.message}`);
+
+  test("enum lists the allowed values", () => {
+    expect(messages("status: Doing\n")).toEqual(['status: "Doing" is not an allowed value. Allowed: Backlog, Done']);
+  });
+  test("number range names the bound", () => {
+    expect(messages("status: Done\nestimate: 945\n")).toEqual(["estimate: Must be at most 360, got 945"]);
+  });
+  test("wrong type names what was expected and what was found", () => {
+    expect(messages("status: Done\ndone: [a]\n")).toEqual(["done: Expected true or false, got a list"]);
+  });
+  test("an empty required field is missing, not a type error", () => {
+    expect(messages("status:\n")).toEqual(["status: Required field is missing"]);
+  });
+  test("YAML errors give the reason and the line", () => {
+    const r = validateFile({ path: "n.md", content: "---\nentity: t\nstatus: a\nstatus: b\n---\n" }, schema);
+    expect(r.errors[0].message).toBe("Not valid YAML: duplicated mapping key (line 4)");
   });
 });

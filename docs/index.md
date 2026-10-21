@@ -4,7 +4,8 @@ Validate your vault's frontmatter against schemas defined right inside the vault
 
 ![Plugin overview](assets/screenshots/overview.png)
 
-This project started as a [CLI hook for Claude Code](cli.md) — a quick check to ensure AI-generated frontmatter only used allowed values. But the problem was bigger than AI: *any* edit could introduce bad data. So the hook grew into a full Obsidian plugin that keeps your vault clean in real time.
+It works as an Obsidian plugin, checking notes while you edit, and as a [command-line tool](cli.md)
+for git hooks, CI and scripts. Both apply the same rules and give the same verdicts.
 
 ## The problem
 
@@ -31,18 +32,19 @@ You define two kinds of schema files — regular markdown notes in your vault:
 !!! tip "Think of it like a database"
     An entity is a table definition. A property is a column type. Your notes are rows.
 
-The plugin validates every note's frontmatter against its entity schema and shows results instantly in the status bar and sidebar.
+Each note's frontmatter is checked against its entity; the plugin shows the result in the
+status bar and the results panel.
 
 See [Schema reference](schema-reference.md) for the full format.
 
 ## Key features
 
-- **Reactive validation** — status bar and results panel update as you edit
+- **Live validation** — the status bar and results panel update as you edit
 - **Entity inheritance** — extend base entities with more specific types
-- **Three-level validation** — structure, types, then link constraints and custom JS
-- **Link constraints** — ensure linked notes have the right type, folder, or properties
-- **Schema management UI** — create and edit schemas from Settings
-- **CLI tool** — same validation from the terminal for CI or scripting
+- **Field rules** — types, allowed values, ranges, required and conditionally required fields, custom JavaScript checks
+- **Link checks** — linked notes must exist and can be required to have a type, folder or property; body wikilinks are checked too, resolved the way Obsidian resolves them
+- **Schema editor** — create and edit entities and properties from Settings
+- **CLI and library** — the same validation in the terminal, in CI, or from code; the schema can also be exported as [mdbase](mdbase.md) JSON Schema
 
 ## Quick links
 
@@ -51,3 +53,5 @@ See [Schema reference](schema-reference.md) for the full format.
 - [Schema reference](schema-reference.md) — entity/property file format and validation logic
 - [CLI](cli.md) — command-line usage
 - [Architecture](architecture.md) — data flow, modules, security
+- [mdbase engine](mdbase.md) — the CLI's JSON-Schema engine and `mdbase-export`
+- [Troubleshooting](troubleshooting.md) — common problems

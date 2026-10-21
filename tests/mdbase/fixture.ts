@@ -1,7 +1,7 @@
 import { loadSchema } from "../../src/schema.js";
 import type { RawFile } from "../../src/types.js";
 
-/** Minimal two-tier fixture: base ← task / page, properties by name. */
+/** Minimal two-tier fixture: base ← task / page / note / card, properties by name. */
 export function fixtureSchema() {
   const props: RawFile[] = [
     { path: "properties/type_key_property.md", content: "---\nproperty_name: type_key\nproperty_type: string\n---\n" },
@@ -14,6 +14,8 @@ export function fixtureSchema() {
     { path: "properties/dod_property.md", content: "---\nproperty_name: dod\nproperty_type: any\n---\n" },
     { path: "properties/created_property.md", content: "---\nproperty_name: created\nproperty_type: date\n---\n" },
     { path: "properties/done_property.md", content: "---\nproperty_name: done\nproperty_type: boolean\n---\n" },
+    { path: "properties/icon_property.md", content: "---\nproperty_name: icon\nproperty_type: emoji\n---\n" },
+    { path: "properties/note_property.md", content: "---\nproperty_name: note\nproperty_type: string\n---\n" },
   ];
   const entities: RawFile[] = [
     { path: "entities/base_entity.md", content: "---\nentity_name: base\nproperties:\n  type_key: {required: true}\n  tags: {}\n---\n" },
@@ -23,6 +25,11 @@ export function fixtureSchema() {
         "---\nentity_name: task\nextends: base\nproperty_patterns: ['^time_[a-z]+$']\nproperties:\n  status: {required: true}\n  priority: {}\n  estimate: {}\n  epic: {}\n  created: {required: true}\n  done: {}\n  dod:\n    required_unless:\n      status: [Closed, Rejected]\n---\n",
     },
     { path: "entities/page_entity.md", content: "---\nentity_name: page\nextends: base\nallow_extra: true\nproperties:\n  time_budget: {}\n  unknown_prop: {}\n---\n" },
+    {
+      path: "entities/card_entity.md",
+      content:
+        "---\nentity_name: card\nextends: base\nproperties:\n  icon: {}\n  priority: {}\n  note:\n    required: false\n    required_unless:\n      priority: [1]\n  estimate:\n    required_unless:\n      priority: [1]\n---\n",
+    },
     { path: "entities/note_entity.md", content: "---\nentity_name: note\nextends: base\nexpected_folder: notes/\nproperties:\n  status: {}\n---\n" },
   ];
   return loadSchema(entities, props);

@@ -1,19 +1,16 @@
 /**
  * VaultSchema → mdbase (JSON Schema 2020-12) projection.
  *
- * Our two-tier authoring model (entities/** + properties/**) stays the SSOT;
- * this module compiles it into mdbase's flat per-type files. Nothing here is
- * hand-maintained: `_types/*.md` and `mdbase.yaml` are generated artifacts.
+ * The two-tier schema notes (entities/** + properties/**) stay the source of
+ * truth; this module compiles them into mdbase's flat per-type files, so
+ * `_types/*.md` and `mdbase.yaml` are generated, never edited by hand.
  *
- * Deliberately minimal (user ruling 28.09 — "не переусложнять"): one mapping
- * table, no plugin hooks, no per-property overrides. Whatever mdbase cannot
+ * One mapping table, no hooks, no per-property overrides. Whatever mdbase cannot
  * express (link target folder/property checks, task-intake gating,
  * custom_validator, expected_folder, body link checks) is simply not emitted
  * and stays in the bespoke layer of validate.ts.
  */
 import matter from "gray-matter";
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
 import type { ResolvedProperty, VaultSchema } from "../types.js";
 
 export type JsonSchema = Record<string, unknown>;
@@ -41,6 +38,9 @@ export type MdbaseConfigFile = {
   };
 };
 
+/** Same pattern as Zod's `.emoji()`: one or more emoji characters. */
+const EMOJI_PATTERN = "^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$";
+
 // Fresh object per call: a shared array reference would make the YAML emitter
 // write anchors/aliases (`&ref_0` / `*ref_0`) across properties.
 const listTolerant = (): JsonSchema => ({ type: ["array", "string", "number", "boolean"] });
@@ -54,8 +54,10 @@ export function propertyToJsonSchema(prop: ResolvedProperty): JsonSchema {
     case "date":
     case "datetime":
     case "link":
-    case "emoji":
       out = { type: "string" };
+      break;
+    case "emoji":
+      out = { type: "string", pattern: EMOJI_PATTERN };
       break;
     case "number": {
       out = { type: "number" };
@@ -100,12 +102,19 @@ export function propertyToJsonSchema(prop: ResolvedProperty): JsonSchema {
   return out;
 }
 
+/** Each value, plus its number form when it is numeric text. */
+function withNumericSpellings(values: string[]): (string | number)[] {
+  const numbers = values.filter((v) => v.trim() !== "" && Number.isFinite(Number(v))).map(Number);
+  return [...values, ...numbers];
+}
+
 /** Build the `if/else` clause expressing `required_unless` for one property.
  * Exempt when ANY listed field holds ANY of its values (schema.ts semantics);
  * the field must be present for the exemption to apply. */
 function requiredUnlessClause(propName: string, cond: Record<string, string[]>): JsonSchema {
   const branches = Object.entries(cond).map(([field, values]) => ({
-    properties: { [field]: { enum: values } },
+    // Numbers compare by their string form on the Zod side, so `1` matches "1".
+    properties: { [field]: { enum: withNumericSpellings(values) } },
     required: [field],
   }));
   return {
@@ -132,7 +141,7 @@ export function entityToTypeDef(
   for (const p of [...props].sort((a, b) => a.name.localeCompare(b.name))) {
     if (p.name === typeKeyField) continue;
     properties[p.name] = propertyToJsonSchema(p);
-    if (p.required_unless) conditionals.push(requiredUnlessClause(p.name, p.required_unless));
+    if (p.required && p.required_unless) conditionals.push(requiredUnlessClause(p.name, p.required_unless));
     else if (p.required) required.push(p.name);
     const target = p.link_constraints?.target_type_key;
     if (target) links[p.name] = { target_type: target, validate_exists: true };
@@ -192,24 +201,4 @@ export function renderTypeFile(def: MdbaseTypeDef): string {
 export function renderConfigFile(config: MdbaseConfigFile): string {
   // gray-matter's stringify wraps YAML in `---` fences; strip them to get a bare YAML doc.
   return matter.stringify("", config).replace(/^---\n/, "").replace(/\n---\n*$/, "\n");
-}
-
-/** Write `mdbase.yaml` + `_types/*.md` into `outDir`. Returns written paths (relative). */
-export async function exportMdbase(
-  schema: VaultSchema,
-  typeKeyField: string,
-  outDir: string,
-): Promise<string[]> {
-  const { config, types } = translateSchema(schema, typeKeyField);
-  await mkdir(join(outDir, config.settings.types_folder), { recursive: true });
-  const written: string[] = [];
-
-  await writeFile(join(outDir, "mdbase.yaml"), renderConfigFile(config), "utf-8");
-  written.push("mdbase.yaml");
-  for (const def of types) {
-    const rel = join(config.settings.types_folder, `${def.name}.md`);
-    await writeFile(join(outDir, rel), renderTypeFile(def), "utf-8");
-    written.push(rel);
-  }
-  return written;
 }

@@ -2,44 +2,62 @@
 
 ## Project Overview
 
-**Property Validator** — Obsidian plugin + CLI that validates vault frontmatter against schemas defined in the vault's own entity/property files. Entity-centric architecture with inheritance support.
+**Property Validator** (`obsi-validate`) — Obsidian plugin, CLI and library that validate vault
+frontmatter against a schema kept in the vault's own entity and property notes. The plugin and
+the CLI share one validation core and must give the same verdicts.
 
 ## Build & Development
 
 ```bash
-bun install                          # install dependencies
-bun run dev                          # build plugin with watch mode
-bun run build                        # production build (type-check + minified)
-bun test                             # run all tests
-bun test tests/schema.test.ts        # run single test file
-bun run src/cli.ts --vault-dir <path> # run CLI in dev
-bun run build:cli                    # build CLI dist/ (cli.js + index.js)
+bun install                                   # dependencies
+bun run dev                                   # plugin, watch mode
+bun run build                                 # plugin: type-check + minified main.js
+bun run build:cli                             # CLI and library: dist/cli.js, dist/index.js
+bun run lint                                  # type-check only
+bun test                                      # all tests
+bun test tests/schema.test.ts                 # one file
+bun src/cli.ts <vault> --check-links          # CLI from source
+node scripts/check-plugin-bundle.mjs main.js  # plugin bundle requires only "obsidian" (CI)
 ```
+
+`main.js` and `dist/` are build output (gitignored). A global `obsi-validate` made with
+`bun link` and a vault plugin folder symlinked to `main.js` both run whatever was built last —
+build in a separate clone when experimenting.
 
 ## Architecture
 
-Entity-centric, three-level validation with inheritance:
+Validation order (`validate.ts`): YAML → type field → expected folder → normalize values
+(`values.ts`: empty = not set, mdbase-style coercion) → shape engine (unknown fields, value
+types, required/required_unless) → custom validators + link constraints → task intake → body
+wikilinks and inline properties (`checkLinks`; warnings unless `strictLinks`). Messages come
+from `values.ts`, so both engines word them the same.
 
-1. **schema.ts** — parses entity/property YAML, builds Zod validators, resolves entity inheritance, constructs `entityMap`
-2. **validate.ts** — Level 1: fields vs entity schema. Level 2: values via Zod. Level 3: link constraints + custom validators + required fields.
-3. **plugin-main.ts** — Obsidian plugin class, commands, reactive validation, status bar
-4. **bridge.ts** — TFile ↔ RawFile adapter, vault index for link validation, file writes
-5. **cli.ts** — CLI entry point (commander, file I/O, output formatting)
+Core, runtime-agnostic (takes `{path, content}`, no file system): `schema.ts`, `validate.ts`,
+`rules/task-intake.ts`, `link-index.ts` (link parsing, index, Obsidian-style resolution),
+`vault-files.ts` (which files are validated / linked / schema), `frontmatter.ts`, `values.ts`,
+`mdbase/translate.ts`, `mdbase/adapter.ts`, `index.ts` (library entry).
 
-Core modules (`types.ts`, `schema.ts`, `validate.ts`) are runtime-agnostic — accept `{path, content}[]`, no file reads.
+Front ends: `cli.ts` + `config.ts` + `walk.ts` (CLI); `plugin-main.ts` + `bridge.ts` (vault
+access, link-index cache, schema writes via `processFrontMatter`) + `plugin-settings.ts`,
+`SettingsTab.ts`, `ui/`, `ResultsView.ts`, `VaultResultsView.ts` (plugin).
 
-See [docs/architecture.md](docs/architecture.md) for diagrams and data flow.
-See [docs/schema-reference.md](docs/schema-reference.md) for entity/property file format.
-See [docs/getting-started.md](docs/getting-started.md) for plugin usage.
+Rules that must hold:
+- Any rule about which files count, how links resolve or how a value is read lives once in the
+  core and is used by both front ends.
+- The two shape engines (Zod, mdbase) agree: `tests/mdbase/parity.test.ts`.
+- The plugin and the CLI agree on the same vault: `tests/plugin/bridge.test.ts`.
+
+Docs: [architecture](docs/architecture.md), [schema reference](docs/schema-reference.md),
+[CLI](docs/cli.md), [mdbase engine](docs/mdbase.md).
 
 ## Tech Stack
 
-Bun (test runner), esbuild (bundler), TypeScript, Zod, gray-matter, commander (CLI only)
+TypeScript, Bun (runtime, tests, CLI build), esbuild (plugin build), Zod, gray-matter,
+@callumalpass/mdbase (CLI only), commander (CLI only).
 
 ## Project Structure
 
-Follows [official Obsidian plugin layout](https://docs.obsidian.md/Plugins/Getting+started/Build+a+plugin):
-- `manifest.json`, `styles.css`, `esbuild.config.mjs` at root
-- `src/plugin-main.ts` — plugin entry point
-- `src/` — all source (core library + plugin)
-- `main.js` — built output (not committed, in .gitignore)
+Follows the [Obsidian plugin layout](https://docs.obsidian.md/Plugins/Getting+started/Build+a+plugin):
+`manifest.json`, `styles.css`, `esbuild.config.mjs` at the root; all source in `src/`
+(`src/plugin-main.ts` is the plugin entry); tests in `tests/` with a shared fixture vault in
+`tests/fixtures/mini-vault/`.

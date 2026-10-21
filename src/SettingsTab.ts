@@ -6,7 +6,6 @@ import { renderPropertiesTab } from "./ui/PropertiesTab";
 
 export class ObsiValidateSettingTab extends PluginSettingTab {
   plugin: ObsiValidatePlugin;
-  private tabManager: TabManager | null = null;
   private defaultTab: string | undefined;
   private searchAfterRender: string | null = null;
 
@@ -37,7 +36,6 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
       },
     ], this.defaultTab);
 
-    this.tabManager = tabs;
     tabs.render();
 
     if (this.searchAfterRender !== null) {
@@ -76,7 +74,7 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
       .setName("Schema directory")
       .setDesc(
         "Folder containing entities/ and properties/ subdirectories, relative to vault root. " +
-          'Use "." for vault root. Directories are created automatically.',
+          'Use "." for vault root. The folders are created with the first entity or property.',
       )
       .addText((text) =>
         text
@@ -84,34 +82,32 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.schemaDir)
           .onChange(async (value) => {
             this.plugin.settings.schemaDir = value || ".";
-            this.plugin.schema = null;
+            this.plugin.invalidateSchema();
             await this.plugin.saveSettings();
           }),
       );
 
 
     new Setting(containerEl)
-      .setName("Entity field")
+      .setName("Type key field")
       .setDesc(
-        "Frontmatter field name that identifies the entity type of a note. " +
-          "For example: entity, type_name, type_key, type.",
+        "Frontmatter field that names a note's type, e.g. type_key or entity. " +
+          "Leave empty to detect it from the schema: type_key if a type_key property exists, else entity.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("entity")
+          .setPlaceholder("auto")
           .setValue(this.plugin.settings.typeKeyField)
           .onChange(async (value) => {
-            this.plugin.settings.typeKeyField = value || "entity";
+            this.plugin.settings.typeKeyField = value.trim();
             await this.plugin.saveSettings();
           }),
       );
-    
 
     new Setting(containerEl)
       .setName("Default entity type")
       .setDesc(
-        "Entity type used when the type key field is missing. " +
-          "Leave empty to skip files without entity type.",
+        "Type for notes without a type field. Leave empty to skip such notes.",
       )
       .addDropdown((dd) => {
         dd.addOption("", "(none — skip)");
@@ -127,6 +123,16 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
       });
+
+    new Setting(containerEl)
+      .setName("Check links in the note body")
+      .setDesc("Also report, as warnings, body wikilinks and inline [key:: value] properties that point to missing notes or break a property rule.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.checkLinks).onChange(async (value) => {
+          this.plugin.settings.checkLinks = value;
+          await this.plugin.saveSettings();
+        }),
+      );
 
     new Setting(containerEl)
       .setName("Show ribbon icon")
@@ -146,73 +152,17 @@ export class ObsiValidateSettingTab extends PluginSettingTab {
     // --- How it works ---
 
     containerEl.createEl("h3", { text: "How it works" });
-
     const guide = containerEl.createDiv({ cls: "obsi-validate-guide" });
-
     guide.createEl("p", {
       text:
-        "Property Validator checks your notes' frontmatter against schemas " +
-        "defined in your vault as regular markdown files. " +
-        "Use the Entities and Properties tabs to manage schemas.",
+        "Each note's type field names an entity; the entity lists the note's properties, and each " +
+        "property note defines what a valid value is. Manage them in the Entities and Properties tabs.",
     });
-
-    guide.createEl("h4", { text: "Directory structure" });
-    const structPre = guide.createEl("pre");
-    const schemaDir =
-      this.plugin.settings.schemaDir === "."
-        ? ""
-        : this.plugin.settings.schemaDir + "/";
-    structPre.createEl("code", {
-      text:
-        `${schemaDir}entities/      \u2190 entity definitions\n` +
-        `  task_entity.md\n` +
-        `  note_entity.md\n` +
-        `${schemaDir}properties/    \u2190 property type definitions\n` +
-        `  status.md\n` +
-        `  priority.md`,
+    const dir = this.plugin.settings.schemaDir === "." ? "" : `${this.plugin.settings.schemaDir}/`;
+    guide.createEl("pre").createEl("code", {
+      text: `${dir}entities/task_entity.md\n${dir}properties/status_property.md`,
     });
-
-    guide.createEl("h4", { text: "How notes are validated" });
-    const typeKey = this.plugin.settings.typeKeyField;
-    const steps = guide.createEl("ol");
-    steps.createEl("li", {
-      text: `The "${typeKey}" field in frontmatter determines the entity type.`,
-    });
-    steps.createEl("li", {
-      text: "Unknown fields produce warnings (unless allow_extra: true on entity).",
-    });
-    steps.createEl("li", {
-      text: "Known fields are validated against their property type and constraints.",
-    });
-    steps.createEl("li", {
-      text: "Missing required fields produce errors.",
-    });
-
-    guide.createEl("h4", { text: "Supported property types" });
-    const types = guide.createEl("ul");
-    const typeList = [
-      "string \u2014 any text",
-      "number \u2014 numeric value (min_value, max_value)",
-      "boolean \u2014 true/false",
-      "date \u2014 YYYY-MM-DD",
-      "time \u2014 time string",
-      "datetime \u2014 date with time",
-      "enum \u2014 one of allowed_values",
-      "link \u2014 single link (wikilink or markdown)",
-      "links \u2014 array of links",
-      "list \u2014 array of any values",
-    ];
-    for (const t of typeList) {
-      types.createEl("li", { text: t });
-    }
-
-    guide.createEl("h4", { text: "Commands" });
-    const cmds = guide.createEl("ul");
-    cmds.createEl("li", {
-      text: "Validate current file \u2014 check the active note (Cmd/Ctrl+P)",
-    });
-    cmds.createEl("li", {
-      text: "Validate vault \u2014 scan all notes (ribbon icon or Cmd/Ctrl+P)",
-    });
+    const more = guide.createEl("p", { text: "Property types, rules and examples: " });
+    more.createEl("a", { text: "schema reference", href: "https://obsi-validate.mchep.dev/schema-reference/" });
   }
 }

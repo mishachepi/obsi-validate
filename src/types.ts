@@ -13,19 +13,13 @@ export type EntityPropertyConfig = {
    *     required_unless:
    *       status: [Closed, Rejected]
    *
-   * For rules introduced after history accumulated. Making `dod` unconditionally
-   * required marked 196 already-closed notes invalid forever — they cannot be
-   * fixed, because inventing an acceptance criterion for someone else's finished
-   * work is fabrication. Permanent unfixable noise teaches people to ignore the
-   * validator exactly where it still matters (139 open notes genuinely missing it).
+   * Useful for rules added after notes accumulated, e.g. closed notes that
+   * predate the field. Declaring it implies `required: true` unless `required`
+   * is explicitly false.
    *
-   * Declaring this IMPLIES `required: true` — "required unless X" is a statement
-   * of requiredness. Needing both keys would mean a schema that carries the
-   * exemption and enforces nothing, which is the silent-no-op this replaces.
-   *
-   * Exempt if ANY listed field matches ANY of its values. Comparison is by exact
-   * string, so `Closed` does not match `closed` — statuses here are a controlled
-   * vocabulary, and loose matching would quietly excuse typos.
+   * Exempt when ANY listed field holds ANY of its values. The field must hold a
+   * single value (not a list); numbers compare by their string form; matching
+   * is exact, so `Closed` does not match `closed`.
    */
   required_unless?: Record<string, string[]>;
 };
@@ -54,17 +48,14 @@ export type PropertySchema = {
   link_constraints?: LinkConstraints;
   /** If true, null/empty values are valid for this property */
   nullable?: boolean;
-  /** JS expression for custom post-validation (receives `value` variable, returns true/false or error string) */
+  /** JS expression for custom validation: sees `value`, returns true to pass, false or a message to fail */
   custom_validator?: string;
+  /** `custom_validator` compiled once at schema load */
+  customCheck?: (value: unknown) => unknown;
   /**
-   * `etl.value_map` from the property note: the vocabulary the day ETL folds into
-   * the declared type, e.g. mood `good -> 8`.
-   *
-   * The validator must apply the SAME map before type-checking an inline marker.
-   * `fm` reads it and computes `mood: 8` correctly; without it here,
-   * `[mood::good]` was reported as "expected number, received string" on data
-   * that is correct end-to-end — and validate-hook runs on every edit, so the
-   * false failure fires on every future touch of those days.
+   * `etl.value_map` from the property note: words that stand for values of the
+   * declared type (e.g. mood `good -> 8`). Inline `[mood::good]` values are
+   * mapped through it before type-checking.
    */
   value_map?: Record<string, unknown>;
   /** Compiled Zod validator for this property's value */
@@ -154,8 +145,12 @@ export type ValidationSummary = {
   results: ValidationResult[];
 };
 
-/** Map of normalized note name → its frontmatter data, for link validation */
-export type VaultIndex = Map<string, { path: string; data: Record<string, unknown> }>;
+/** A linkable file: vault-relative path and parsed frontmatter. */
+export type VaultIndexEntry = { path: string; data: Record<string, unknown> };
+
+/** Lower-case link key → matching files, best first. Build with
+ * buildIndexFromEntries, query with resolveLink (link-index.ts). */
+export type VaultIndex = Map<string, VaultIndexEntry[]>;
 
 /**
  * The "shape" half of validation: field types, enum/range, unknown fields,
@@ -181,6 +176,11 @@ export type ValidateOptions = {
   defaultEntityType?: string;
   /** Vault index for cross-file link validation */
   vaultIndex?: VaultIndex;
-  /** When true, also validate body wikilinks and inline properties */
+  /** When true, also check body wikilinks and inline properties */
   checkLinks?: boolean;
+  /** Report body wikilink and inline-property findings as errors, not warnings */
+  strictLinks?: boolean;
+  /** Vault root when file paths are absolute (CLI); folder rules compare
+   * vault-relative paths. Plugin paths are already vault-relative. */
+  vaultRoot?: string;
 };

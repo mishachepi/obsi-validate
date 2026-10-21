@@ -1,7 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { validateFile } from "../../src/validate.js";
 import { mdbaseShapeEngine } from "../../src/mdbase/adapter.js";
-import type { ValidateOptions, ValidationResult, VaultIndex } from "../../src/types.js";
+import type { ValidateOptions, ValidationResult } from "../../src/types.js";
+import { buildIndexFromEntries } from "../../src/link-index.js";
 import { fixtureSchema } from "./fixture.js";
 
 const schema = fixtureSchema();
@@ -39,7 +40,7 @@ describe("mdbase shape engine — parity with Zod on validateFile()", () => {
     const { md } = expectParity("---\ntype_key: task\nstatus: Doing\ncreated: 2026-01-05\ndod: x\nestimate: 0\ncolor: red\n---\n");
     expect(md.valid).toBe(false);
     expect(md.errors.find((e) => e.field === "estimate")?.expected).toBe("number");
-    expect(md.warnings[0]).toEqual({ field: "color", message: "Unknown property for this entity" });
+    expect(md.warnings[0]).toEqual({ field: "color", message: "Not a property of task" });
   });
 
   test("required field missing", () => {
@@ -70,8 +71,8 @@ describe("mdbase shape engine — parity with Zod on validateFile()", () => {
   });
 
   test("bespoke link_constraints run unchanged on both engines", () => {
-    const index: VaultIndex = new Map([["E1", { path: "epics/E1.md", data: { type_key: "page" } }]]);
+    const index = buildIndexFromEntries([{ path: "epics/E1.md", data: { type_key: "page" } }]);
     const { md } = expectParity("---\ntype_key: task\nstatus: Backlog\ncreated: 2026-01-05\ndod: x\nepic: \"[[E1]]\"\n---\n", { vaultIndex: index });
-    expect(md.errors[0].message).toContain('expected one of: epic');
+    expect(md.errors[0].message).toBe('Linked "E1" has type page, expected epic');
   });
 });

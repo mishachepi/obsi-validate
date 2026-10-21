@@ -1,15 +1,17 @@
-import { Notice, Plugin, TAbstractFile, TFile } from "obsidian";
-import type { VaultSchema, VaultIndex, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
-import { ensureSchema, bridgeValidateFile, bridgeValidateVault, buildVaultIndex } from "./bridge";
+import { Notice, Plugin, TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
+import type { VaultSchema, ValidateOptions, ValidationResult, ValidationSummary } from "./types";
+import { LinkIndexCache, isInSchemaFolders, isNoteToValidate, loadSchemaFromVault, needsLinkIndex, readTemplateFolders, validateNote, validateVaultNotes } from "./bridge";
+import { resolveTypeKeyField } from "./schema";
 import { ResultsView } from "./ResultsView";
 import { VaultResultsView } from "./VaultResultsView";
+import { findView } from "./view-lookup";
 import { ObsiValidateSettingTab } from "./SettingsTab";
 import {
   VIEW_TYPE_RESULTS,
   VIEW_TYPE_VAULT_RESULTS,
   DEFAULT_SETTINGS,
   type PluginSettings,
-} from "./constants";
+} from "./plugin-settings";
 
 export default class ObsiValidatePlugin extends Plugin {
   settings: PluginSettings = DEFAULT_SETTINGS;
@@ -20,7 +22,7 @@ export default class ObsiValidatePlugin extends Plugin {
   schemaLoading: Promise<VaultSchema> | null = null;
   lastResult: ValidationResult | null = null;
   private settingsTab: ObsiValidateSettingTab | null = null;
-  private vaultIndex: VaultIndex | null = null;
+  private linkIndex = new LinkIndexCache(this.app);
 
   async onload() {
     await this.loadSettings();
@@ -59,24 +61,14 @@ export default class ObsiValidatePlugin extends Plugin {
     this.addCommand({
       id: "show-validation-results",
       name: "Show validation results",
-      callback: () => {
-        this.activateView(VIEW_TYPE_RESULTS).then(() => {
-          const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
-          if (view && this.lastResult) view.renderSingleResult(this.lastResult);
-        });
-      },
+      callback: () => void this.openLastResult(),
     });
 
     // Status bar
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass("obsi-validate-statusbar");
     this.statusBarEl.addEventListener("click", () => {
-      if (this.lastResult) {
-        this.activateView(VIEW_TYPE_RESULTS).then(() => {
-          const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
-          if (view) view.renderSingleResult(this.lastResult!);
-        });
-      }
+      if (this.lastResult) void this.openLastResult();
     });
     this.renderStatusBar();
 
@@ -84,34 +76,35 @@ export default class ObsiValidatePlugin extends Plugin {
     this.settingsTab = new ObsiValidateSettingTab(this.app, this);
     this.addSettingTab(this.settingsTab);
 
-    // Watch file changes
-    const isSchemaFile = (path: string) => {
-      const dir = this.settings.schemaDir;
-      const base = (!dir || dir === ".") ? "" : dir + "/";
-      return path.startsWith(`${base}entities/`) || path.startsWith(`${base}properties/`);
+    // Keep the schema and the link index in step with the vault
+    const touched = (path: string) => {
+      if (isInSchemaFolders(path, this.settings.schemaDir)) this.invalidateSchema();
     };
-
     this.registerEvent(
-      this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (isSchemaFile(file.path)) {
-          this.schema = null; this.schemaLoading = null;
-        }
-        if (file instanceof TFile && file.extension === "md") {
-          this.vaultIndex = null;
-          this.debouncedRevalidate();
-        }
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("delete", (file: TAbstractFile) => {
-        if (isSchemaFile(file.path)) { this.schema = null; this.schemaLoading = null; }
-        this.vaultIndex = null;
+      this.app.vault.on("modify", async (file: TAbstractFile) => {
+        touched(file.path);
+        await this.linkIndex.update(file);
+        if (file instanceof TFile && file.extension === "md") this.debouncedRevalidate();
       }),
     );
     this.registerEvent(
       this.app.vault.on("create", (file: TAbstractFile) => {
-        if (isSchemaFile(file.path)) { this.schema = null; this.schemaLoading = null; }
-        this.vaultIndex = null;
+        touched(file.path);
+        void this.linkIndex.update(file);
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file: TAbstractFile) => {
+        touched(file.path);
+        this.linkIndex.remove(file.path);
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
+        touched(oldPath);
+        touched(file.path);
+        this.linkIndex.remove(oldPath);
+        void this.linkIndex.update(file);
       }),
     );
 
@@ -138,17 +131,18 @@ export default class ObsiValidatePlugin extends Plugin {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
   }
 
-  // --- Schema loading with mutex ---
+  // --- Schema loading: one load at a time ---
 
-  private async getSchema(): Promise<VaultSchema> {
+  invalidateSchema() {
+    this.schema = null;
+    this.schemaLoading = null;
+  }
+
+  async getSchema(): Promise<VaultSchema> {
     if (this.schema) return this.schema;
     if (this.schemaLoading) return this.schemaLoading;
 
-    this.schemaLoading = ensureSchema(
-      this.app,
-      this.settings.schemaDir,
-      null,
-    ).then((s) => {
+    this.schemaLoading = loadSchemaFromVault(this.app, this.settings.schemaDir).then((s) => {
       this.schema = s;
       this.schemaLoading = null;
       return s;
@@ -173,48 +167,30 @@ export default class ObsiValidatePlugin extends Plugin {
     }, 800);
   }
 
-  /** Silently validate active file, update status bar + results panel if open */
-  async silentValidateActiveFile() {
-    const activeFile = this.app.workspace.getActiveFile();
-    if (!activeFile || activeFile.extension !== "md") {
-      this.lastResult = null;
-      this.renderStatusBar();
-      return;
-    }
-
-    let schema: VaultSchema;
-    try {
-      schema = await this.getSchema();
-    } catch {
-      this.lastResult = null;
-      this.renderStatusBar();
-      return;
-    }
-
-    const vaultIndex = await this.getVaultIndex(schema);
-    const result = await bridgeValidateFile(
-      this.app,
-      activeFile,
-      schema,
-      this.validateOptions(),
-      vaultIndex ?? undefined,
-    );
-
-    this.lastResult = result;
-    this.renderStatusBar();
-
-    // Update results panel if it's open
-    const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
-    if (view) view.renderSingleResult(result);
+  /** Validate the active note, or null when there is none to validate. */
+  private async validateActiveNote(): Promise<ValidationResult | null> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file || !isNoteToValidate(file.path, await readTemplateFolders(this.app))) return null;
+    const schema = await this.getSchema();
+    return validateNote(this.app, file, schema, await this.validateOptions(schema));
   }
 
-  /** Get cached vault index, building it only if needed */
-  private async getVaultIndex(schema: VaultSchema): Promise<VaultIndex | null> {
-    const hasLinkConstraints = schema.properties.some((p) => p.link_constraints);
-    if (!hasLinkConstraints) return null;
-    if (this.vaultIndex) return this.vaultIndex;
-    this.vaultIndex = await buildVaultIndex(this.app);
-    return this.vaultIndex;
+  /** Open the results panel on the last result. */
+  private async openLastResult() {
+    await this.activateView(VIEW_TYPE_RESULTS);
+    this.showResult(this.lastResult);
+  }
+
+  private showResult(result: ValidationResult | null) {
+    this.lastResult = result;
+    this.renderStatusBar();
+    const view = this.getView(VIEW_TYPE_RESULTS, ResultsView);
+    if (view && result) view.renderSingleResult(result);
+  }
+
+  /** Validate the active note quietly: status bar, plus the results panel if it is open. */
+  async silentValidateActiveFile() {
+    this.showResult(await this.validateActiveNote().catch(() => null));
   }
 
   // --- Status bar ---
@@ -230,117 +206,84 @@ export default class ObsiValidatePlugin extends Plugin {
     }
 
     this.statusBarEl.style.display = "";
-
-    // Status dot
-    let dotCls = "obsi-validate-dot-valid";
-    if (result.errors.length > 0) dotCls = "obsi-validate-dot-error";
-    else if (result.warnings.length > 0) dotCls = "obsi-validate-dot-warn";
-    this.statusBarEl.createSpan({ cls: `obsi-validate-dot ${dotCls}` });
-
-    // Entity type
-    this.statusBarEl.createSpan({
-      text: result.entityType,
-      cls: "obsi-validate-sb-entity",
-    });
-
+    const state = result.errors.length > 0 ? "error" : result.warnings.length > 0 ? "warn" : "valid";
+    this.statusBarEl.createSpan({ cls: `obsi-validate-dot obsi-validate-dot-${state}` });
+    this.statusBarEl.createSpan({ text: result.entityType, cls: "obsi-validate-sb-entity" });
   }
 
   // --- Commands ---
+
+  private schemaLoadFailed() {
+    new Notice(`Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`);
+  }
 
   async validateVault() {
     let schema: VaultSchema;
     try {
       schema = await this.getSchema();
-    } catch (e) {
-      new Notice(
-        `Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
-      );
-      return;
+    } catch {
+      return this.schemaLoadFailed();
     }
-
-    const summary = await bridgeValidateVault(this.app, schema, this.validateOptions());
+    const summary = await validateVaultNotes(this.app, schema, await this.validateOptions(schema));
     await this.showVaultResults(summary);
-    new Notice(
-      `Validation complete: ${summary.invalid} errors, ${summary.valid} valid`,
-    );
+    new Notice(`Validation complete: ${summary.invalid} errors, ${summary.valid} valid`);
   }
 
   async validateCurrentFile() {
-    const activeFile = this.app.workspace.getActiveFile();
-    if (!activeFile) return;
-
-    let schema: VaultSchema;
+    let result: ValidationResult | null;
     try {
-      schema = await this.getSchema();
-    } catch (e) {
-      new Notice(
-        `Property Validator: Failed to load schema from "${this.settings.schemaDir}". Check plugin settings.`,
-      );
+      result = await this.validateActiveNote();
+    } catch {
+      return this.schemaLoadFailed();
+    }
+    if (!result) {
+      new Notice("Property Validator: this note is not validated (a template, archived, a folder index, or not markdown).");
       return;
     }
-
-    const vaultIndex = await this.getVaultIndex(schema);
-    const result = await bridgeValidateFile(
-      this.app,
-      activeFile,
-      schema,
-      this.validateOptions(),
-      vaultIndex ?? undefined,
-    );
-
-    this.lastResult = result;
-    this.renderStatusBar();
-
     await this.activateView(VIEW_TYPE_RESULTS);
-    const view = this.getView<ResultsView>(VIEW_TYPE_RESULTS);
-    if (view) view.renderSingleResult(result);
+    this.showResult(result);
   }
 
   private async showVaultResults(summary: ValidationSummary) {
     await this.activateView(VIEW_TYPE_VAULT_RESULTS);
-    const view = this.getView<VaultResultsView>(VIEW_TYPE_VAULT_RESULTS);
+    const view = this.getView(VIEW_TYPE_VAULT_RESULTS, VaultResultsView);
     if (view) view.renderSummary(summary);
   }
 
   updateRibbonIcon() {
-    if (this.settings.showRibbonIcon) {
-      if (!this.ribbonIconEl) {
-        this.ribbonIconEl = this.addRibbonIcon("check-circle", "Validate vault", () => {
-          this.validateVault();
-        });
-      }
-    } else {
-      if (this.ribbonIconEl) {
-        this.ribbonIconEl.detach();
-        this.ribbonIconEl = null;
-      }
+    if (this.settings.showRibbonIcon && !this.ribbonIconEl) {
+      this.ribbonIconEl = this.addRibbonIcon("check-circle", "Validate vault", () => void this.validateVault());
+    } else if (!this.settings.showRibbonIcon && this.ribbonIconEl) {
+      this.ribbonIconEl.detach();
+      this.ribbonIconEl = null;
     }
   }
 
-  private validateOptions(): ValidateOptions {
+  /** The same options the CLI derives: type field from the setting or the
+   * schema, and the link index when links are checked. */
+  private async validateOptions(schema: VaultSchema): Promise<ValidateOptions> {
     return {
-      typeKeyField: this.settings.typeKeyField,
+      typeKeyField: resolveTypeKeyField(schema, this.settings.typeKeyField),
       defaultEntityType: this.settings.defaultEntityType || undefined,
+      checkLinks: this.settings.checkLinks,
+      vaultIndex: needsLinkIndex(schema, this.settings.checkLinks) ? await this.linkIndex.get() : undefined,
     };
   }
 
-  private getView<T>(viewType: string): T | null {
-    const leaves = this.app.workspace.getLeavesOfType(viewType);
-    return leaves.length > 0 ? (leaves[0].view as T) : null;
+  private getView<T>(viewType: string, ctor: abstract new (...args: never[]) => T): T | null {
+    return findView(this.app.workspace.getLeavesOfType(viewType), ctor);
   }
 
   private async activateView(viewType: string): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(viewType);
-    if (existing.length === 0) {
-      const leaf = this.app.workspace.getRightLeaf(false);
-      if (leaf) {
-        await leaf.setViewState({ type: viewType, active: true });
-      }
+    const { workspace } = this.app;
+    let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(viewType)[0] ?? null;
+    if (!leaf) {
+      leaf = workspace.getRightLeaf(false);
+      await leaf?.setViewState({ type: viewType, active: true });
     }
-    const leaves = this.app.workspace.getLeavesOfType(viewType);
-    if (leaves.length > 0) {
-      this.app.workspace.revealLeaf(leaves[0]);
-    }
+    if (!leaf) return;
+    await workspace.revealLeaf(leaf);
+    await leaf.loadIfDeferred?.();
   }
 
   /** Open plugin settings on a specific tab with search pre-filled */
@@ -355,5 +298,4 @@ export default class ObsiValidatePlugin extends Plugin {
       setting.openTabById("property-validator");
     }
   }
-
 }

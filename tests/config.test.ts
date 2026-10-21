@@ -43,3 +43,37 @@ describe("resolveConfig — exclude_dirs is additive, not override", () => {
     expect(config.exclude_dirs).toEqual([]);
   });
 });
+
+describe("resolveConfig — target and vault root", () => {
+  const none = join(tmpdir(), "does-not-exist-config.json");
+  const fixture = join(import.meta.dir, "fixtures", "mini-vault");
+
+  test("the vault root is discovered from the target", () => {
+    const config = resolveConfig({ target: join(fixture, "tasks", "good.md") }, none);
+    expect(config.vault_dir).toBe(fixture);
+    expect(config.schema_dir).toBe(join(fixture, "_system"));
+    expect(config.target).toBe(join(fixture, "tasks", "good.md"));
+  });
+
+  test("an explicit vault dir beats discovery", () => {
+    const config = resolveConfig({ target: join(fixture, "tasks"), vault_dir: join(fixture, "tasks") }, none);
+    expect(config.vault_dir).toBe(join(fixture, "tasks"));
+  });
+
+  test("the vault found above an explicit target beats the config file", async () => {
+    const path = await configFileAt({ vault_dir: "/somewhere", schema_dir: "/somewhere/_system" });
+    const config = resolveConfig({ target: join(fixture, "tasks") }, path);
+    expect(config.vault_dir).toBe(fixture);
+    expect(config.schema_dir).toBe(join(fixture, "_system"));
+  });
+
+  test("without a target, the config file names the vault", async () => {
+    const path = await configFileAt({ vault_dir: "/somewhere" });
+    expect(resolveConfig({}, path).vault_dir).toBe("/somewhere");
+  });
+
+  test("without a target, the vault itself is the target", () => {
+    const config = resolveConfig({ vault_dir: fixture }, none);
+    expect(config.target).toBe(fixture);
+  });
+});

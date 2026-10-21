@@ -1,6 +1,7 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
-import { VIEW_TYPE_VAULT_RESULTS } from "./constants";
+import { VIEW_TYPE_VAULT_RESULTS } from "./plugin-settings";
 import type { ValidationResult, ValidationSummary } from "./types";
+import { fieldLabel } from "./values";
 import type ObsiValidatePlugin from "./plugin-main";
 
 export class VaultResultsView extends ItemView {
@@ -110,11 +111,11 @@ export class VaultResultsView extends ItemView {
     const issueList = details.createDiv({ cls: "obsi-validate-issues" });
     for (const err of result.errors) {
       const line = issueList.createDiv({ cls: "obsi-validate-error" });
-      line.createSpan({ text: `  \u2717 ${err.field}: ${err.message}` });
+      line.createSpan({ text: `  \u2717 ${fieldLabel(err.field).label}: ${err.message}` });
     }
     for (const warn of result.warnings) {
       const line = issueList.createDiv({ cls: "obsi-validate-warning" });
-      line.createSpan({ text: `  \u26A0 ${warn.field}: ${warn.message}` });
+      line.createSpan({ text: `  \u26A0 ${fieldLabel(warn.field).label}: ${warn.message}` });
     }
   }
 }

@@ -1,101 +1,86 @@
-import { readFileSync, existsSync, statSync } from "fs";
-import { join, resolve, dirname } from "path";
+/** CLI configuration. Explicit beats inferred: flags, then environment, then
+ * the vault found above an explicitly given path, then the config file, then
+ * the vault found above the current folder. */
+import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
+import { dirname, join, resolve } from "path";
 
 export type Config = {
-  schema_dir: string;
+  /** File or folder to validate */
+  target: string;
+  /** Vault root: link index, folder rules and relative paths are based on it */
   vault_dir: string;
-  /** Frontmatter field for entity type — undefined means caller should auto-detect */
+  /** Folder with entities/ and properties/ */
+  schema_dir: string;
+  /** Frontmatter type field; undefined = detect from the schema */
   type_key_field?: string;
+  /** Type for notes without a type field; "" = skip them */
   default_type: string;
-  /**
-   * Directory basenames to skip during both walks (target + vault-index),
-   * on top of the built-in defaults (dot-dirs, `_archive`, `_skill` — see
-   * cli.ts:walkVaultFiles). Exact basename match, not a glob — a directory
-   * named e.g. `_templates` anywhere in the tree is excluded, matching how
-   * the existing hardcoded defaults already work.
-   */
+  /** Folder names skipped in every walk, on top of dot-folders, `_archive` and `_skill` */
   exclude_dirs: string[];
 };
 
-const DEFAULTS = {
-  schema_dir: "./_system",
-  vault_dir: ".",
-  default_type: "",
-  exclude_dirs: [] as string[],
-};
+export type ConfigFlags = Partial<Omit<Config, "default_type">>;
 
-/** Walk up from a start path (file or dir) to the vault root — the nearest
- *  ancestor holding `_system/entities` — and return its `_system` schema dir.
- *  Lets the CLI find schemas from any cwd without an explicit --schema-dir. */
-function discoverSchemaDir(start: string): string | undefined {
-  try {
-    let dir = resolve(start || ".");
-    if (existsSync(dir) && statSync(dir).isFile()) dir = dirname(dir);
-    for (;;) {
-      const candidate = join(dir, "_system");
-      if (existsSync(join(candidate, "entities"))) return candidate;
-      const parent = dirname(dir);
-      if (parent === dir) return undefined; // reached filesystem root
-      dir = parent;
-    }
-  } catch {
-    return undefined;
+const SCHEMA_FOLDER = "_system";
+
+/** Path of the config file: $XDG_CONFIG_HOME/obsi-validate/config.json, else ~/.config/…. */
+export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "obsi-validate", "config.json");
+
+/** The nearest folder at or above `start` that holds `_system/entities`. */
+function findVaultRoot(start: string): string | undefined {
+  let dir = resolve(start);
+  if (existsSync(dir) && statSync(dir).isFile()) dir = dirname(dir);
+  for (;;) {
+    if (existsSync(join(dir, SCHEMA_FOLDER, "entities"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
   }
 }
 
-const CONFIG_PATH = join(
-  process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
-  "obsi-validate",
-  "config.json",
-);
+function folderOf(path: string): string {
+  return existsSync(path) && statSync(path).isFile() ? dirname(path) : path;
+}
 
-/** `pathOverride` exists for tests: it lets resolveConfig() be exercised
- * against a real, isolated config.json without touching XDG_CONFIG_HOME or
- * the operator's actual `~/.config/obsi-validate/config.json` (module-load
- * timing across parallel test files makes an env-var-only approach flaky —
- * this is plain dependency injection instead). The CLI never passes it. */
-function loadConfigFile(pathOverride?: string): Partial<Config> {
+/** An environment variable; empty counts as unset. */
+function env(name: string): string | undefined {
+  return process.env[name] || undefined;
+}
+
+function readConfigFile(path: string): Partial<Config> {
   try {
-    const raw = readFileSync(pathOverride ?? CONFIG_PATH, "utf-8");
-    return JSON.parse(raw);
+    return JSON.parse(readFileSync(path, "utf-8"));
   } catch {
     return {};
   }
 }
 
-/** Resolve config: CLI flags > env vars > config file > defaults */
-export function resolveConfig(flags: Partial<Config>, configPathOverride?: string): Config {
-  const file = loadConfigFile(configPathOverride);
+/** Resolve the configuration; `target` and `vault_dir` come back absolute.
+ * `configPath` exists for tests. */
+export function resolveConfig(flags: ConfigFlags, configPath: string = CONFIG_PATH): Config {
+  const file = readConfigFile(configPath);
+  const explicitStart = flags.target ?? flags.vault_dir;
+  const fromTarget = explicitStart ? findVaultRoot(explicitStart) : undefined;
+  const fromCwd = explicitStart ? undefined : findVaultRoot(".");
 
-  const vault_dir =
-    flags.vault_dir ??
-    process.env.VAULT_DIR ??
-    file.vault_dir ??
-    DEFAULTS.vault_dir;
-
+  const vault_dir = resolve(
+    flags.vault_dir ?? env("VAULT_DIR") ?? fromTarget ?? file.vault_dir ?? fromCwd ?? folderOf(explicitStart ?? "."),
+  );
   const schema_dir =
     flags.schema_dir ??
-    process.env.SCHEMA_DIR ??
+    env("SCHEMA_DIR") ??
+    (fromTarget && join(fromTarget, SCHEMA_FOLDER)) ??
     file.schema_dir ??
-    discoverSchemaDir(vault_dir) ??
-    DEFAULTS.schema_dir;
+    join(vault_dir, SCHEMA_FOLDER);
 
   return {
-    schema_dir,
+    target: flags.target ? resolve(flags.target) : vault_dir,
     vault_dir,
+    schema_dir,
     type_key_field: flags.type_key_field ?? file.type_key_field,
-    default_type:
-      file.default_type ??
-      DEFAULTS.default_type,
-    // Additive, not override: config file and --exclude both apply together
-    // (task DoD: "работают ОБА уровня"). A CLI flag layers a one-off
-    // exclusion on top of the persistent config-file list, it does not
-    // replace it.
-    exclude_dirs: [
-      ...(file.exclude_dirs ?? DEFAULTS.exclude_dirs),
-      ...(flags.exclude_dirs ?? []),
-    ],
+    default_type: file.default_type ?? "",
+    // --exclude adds to the config-file list instead of replacing it.
+    exclude_dirs: [...(file.exclude_dirs ?? []), ...(flags.exclude_dirs ?? [])],
   };
 }
-

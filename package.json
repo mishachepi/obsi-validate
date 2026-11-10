@@ -1,6 +1,6 @@
 {
 	"name": "obsi-validate",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Validate Obsidian vault frontmatter against entity/property schemas kept in the vault (Obsidian plugin, CLI, library)",
 	"main": "dist/index.js",
 	"types": "src/index.ts",

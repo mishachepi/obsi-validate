@@ -6,7 +6,7 @@ import { isAbsolute, join, relative } from "path";
 import { resolveConfig, type Config } from "./config.js";
 import { frontmatterBlock, parseFrontmatter } from "./frontmatter.js";
 import { buildIndexFromEntries } from "./link-index.js";
-import { loadSchema, resolveTypeKeyField } from "./schema.js";
+import { describeDuplicate, loadSchema, resolveTypeKeyField } from "./schema.js";
 import type { RawFile, ValidateOptions, ValidationSummary, VaultIndex, VaultIndexEntry, VaultSchema } from "./types.js";
 import { countResult, emptySummary, validateFile } from "./validate.js";
 import { fieldLabel } from "./values.js";
@@ -60,7 +60,7 @@ function templateFoldersUnder(config: Config, root: string): string[] {
 
 /** Validate files one at a time, keeping only results with errors or warnings. */
 async function validatePaths(paths: string[], schema: VaultSchema, options: ValidateOptions, typeFilter?: string): Promise<ValidationSummary> {
-  const summary = emptySummary();
+  const summary = emptySummary(schema);
   for (const path of paths) {
     const content = options.checkLinks ? await readFile(path, "utf-8") : await readFrontmatterOnly(path);
     const result = validateFile({ path, content }, schema, options);
@@ -81,6 +81,10 @@ function formatPretty(summary: ValidationSummary, vaultDir: string): string {
     lines.push(`\n${result.valid ? "WARN" : "FAIL"} ${shown(result.file)} [${result.entityType ?? "?"}]`);
     for (const e of result.errors) lines.push(`  ✗ ${fieldLabel(e.field).label}: ${e.message}`);
     for (const w of result.warnings) lines.push(`  ⚠ ${fieldLabel(w.field).label}: ${w.message}`);
+  }
+  if (summary.schemaDuplicates?.length) {
+    lines.push("\nSCHEMA");
+    for (const d of summary.schemaDuplicates) lines.push(`  ⚠ ${describeDuplicate({ ...d, paths: d.paths.map(shown) })}`);
   }
   lines.push("", `Total: ${summary.total} | Valid: ${summary.valid} | Invalid: ${summary.invalid} | Skipped: ${summary.skipped}`);
   return lines.join("\n");

@@ -113,12 +113,16 @@ WARN tasks/broken-body-link.md [task]
 WARN tasks/unknown-field.md [task]
   ⚠ colour: Not a property of task
 
+SCHEMA
+  ⚠ property "with" is defined 2 times; using _system/properties/a/with_property.md, ignoring _system/properties/b/with_property.md
+
 Total: 41 | Valid: 10 | Invalid: 11 | Skipped: 20
 ```
 
 Both engines give the same messages. Problems outside a frontmatter property are labelled by
 where they are: `frontmatter` (YAML), `folder` (`expected_folder`), `body` (a wikilink) and
-`<key> (inline)`.
+`<key> (inline)`. The `SCHEMA` block appears only when an entity or property name is defined
+in more than one note.
 
 ### JSON
 
@@ -143,6 +147,10 @@ where they are: `frontmatter` (YAML), `folder` (`expected_folder`), `body` (a wi
 `results` holds only notes with errors or warnings; `file` is an absolute path. Findings in the
 body use the fields `__body_link__` and `__inline__<key>`; an `expected_folder` error uses
 `__path__`; unparsable YAML uses `_yaml`.
+
+When an entity or property name is defined in more than one note, the output also has
+`schemaDuplicates`: a list of `{ "kind": "entity" | "property", "name", "paths" }`, with
+`paths` sorted and the first one in use. The key is absent when there are none.
 
 ## Exit codes
 

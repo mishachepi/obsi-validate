@@ -224,3 +224,44 @@ describe("mdbase-export", () => {
     expect(await readFile(join(a, "mdbase.yaml"), "utf-8")).toContain("explicit_type_keys:\n    - type_key");
   });
 });
+
+describe("CLI reports schema names defined twice", () => {
+  const dirs: string[] = [];
+  afterAll(() => Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true }))));
+
+  async function vaultWithDuplicate(): Promise<string> {
+    const { mkdir, writeFile } = await import("fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "obsi-dup-"));
+    dirs.push(root);
+    const put = async (rel: string, text: string) => {
+      await mkdir(join(root, rel, ".."), { recursive: true });
+      await writeFile(join(root, rel), text);
+    };
+    await put("_system/properties/type_key_property.md", "---\nproperty_name: type_key\nproperty_type: string\n---\n");
+    await put("_system/properties/a/with_property.md", "---\nproperty_name: with\nproperty_type: list\n---\n");
+    await put("_system/properties/b/with_property.md", "---\nproperty_name: with\nproperty_type: string\n---\n");
+    await put("_system/entities/day_entity.md", "---\nentity_name: day\nproperties:\n  type_key: {}\n  with: {}\n---\n");
+    await put("days/d.md", "---\ntype_key: day\nwith: \"[[X]]\"\n---\n");
+    return root;
+  }
+
+  for (const engine of ["mdbase", "zod"]) {
+    test(`${engine}: warns in pretty and json output without failing the run`, async () => {
+      const root = await vaultWithDuplicate();
+      const pretty = cli(root, "--vault-dir", root, "--engine", engine);
+      expect(pretty.code).toBe(0);
+      expect(pretty.out).toContain(
+        'SCHEMA\n  ⚠ property "with" is defined 2 times; using _system/properties/a/with_property.md, ignoring _system/properties/b/with_property.md',
+      );
+      const json = JSON.parse(cli(root, "--vault-dir", root, "--engine", engine, "-f", "json").out);
+      expect(json.schemaDuplicates).toEqual([
+        { kind: "property", name: "with", paths: [join(root, "_system/properties/a/with_property.md"), join(root, "_system/properties/b/with_property.md")] },
+      ]);
+      expect(json.valid).toBe(1);
+    });
+  }
+
+  test("the mini vault has no duplicates, so json output has no schemaDuplicates key", () => {
+    expect("schemaDuplicates" in runJson(VAULT, "--vault-dir", VAULT).summary).toBe(false);
+  });
+});

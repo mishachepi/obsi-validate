@@ -143,6 +143,9 @@ export default class ObsiValidatePlugin extends Plugin {
     if (this.schemaLoading) return this.schemaLoading;
 
     this.schemaLoading = loadSchemaFromVault(this.app, this.settings.schemaDir).then((s) => {
+      if (s.duplicates.length) {
+        new Notice(`Property Validator: ${s.duplicates.length} schema name(s) defined more than once — see "Validate vault" results.`);
+      }
       this.schema = s;
       this.schemaLoading = null;
       return s;

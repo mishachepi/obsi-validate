@@ -16,6 +16,12 @@ No entity has that name. Check the spelling, and that the entity note has `entit
 under `entities/`, and is not in a `_deprecated/` folder — archived definitions are not part of
 the schema.
 
+## "is defined 2 times"
+
+Two schema notes have the same `entity_name` or `property_name`. Only the note whose path
+sorts first is used, so edits to the other one have no effect. Merge them into one note and
+move the other to `_deprecated/`.
+
 ## A link is reported missing, but the note exists
 
 Links resolve the way Obsidian resolves them, so first check whether the link opens in Obsidian.

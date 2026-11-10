@@ -105,6 +105,15 @@ export type ResolvedProperty = PropertySchema & {
   inheritedFrom?: string;
 };
 
+/** Two or more schema notes defining the same entity or property name.
+ * The note with the first path (alphabetically) is used; the rest are ignored. */
+export type SchemaDuplicate = {
+  kind: "entity" | "property";
+  name: string;
+  /** All defining notes, sorted; the first one is used */
+  paths: string[];
+};
+
 /** Complete vault schema with derived entity→properties mapping */
 export type VaultSchema = {
   entities: EntitySchema[];
@@ -117,6 +126,8 @@ export type VaultSchema = {
   propertyPatternMap: Map<string, RegExp[]>;
   /** Entity name → expected folder path */
   expectedFolderMap: Map<string, string>;
+  /** Names defined by more than one schema note */
+  duplicates: SchemaDuplicate[];
 };
 
 /** Single validation error */
@@ -143,6 +154,8 @@ export type ValidationSummary = {
   invalid: number;
   skipped: number;
   results: ValidationResult[];
+  /** Schema names defined more than once; present only when there are some */
+  schemaDuplicates?: SchemaDuplicate[];
 };
 
 /** A linkable file: vault-relative path and parsed frontmatter. */

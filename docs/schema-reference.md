@@ -33,6 +33,10 @@ Not loaded: anything under `_deprecated/` (where the **Archive** action moves re
 definitions), `_archive/`, `_skill/` or a dot-folder, and `_index.md` files. Notes of an
 archived type fail with `Unknown entity type`.
 
+Each name is defined once. When two notes share an `entity_name` or `property_name`, the one
+whose path sorts first is used and the others are ignored. The CLI and the plugin both report
+this as a schema warning; it does not fail the run.
+
 ---
 
 ## Entity files
@@ -296,5 +300,8 @@ Errors make a note invalid; warnings do not.
 - **Valid** — no errors
 - **Invalid** — has errors
 - **Skipped** — no type and no errors
+
+When the schema defines a name twice, the results panel lists it under **Schema** above the
+notes, and a notice appears when the schema loads.
 
 ![Vault scan results](assets/screenshots/vault-scan.png)

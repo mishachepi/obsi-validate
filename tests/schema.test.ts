@@ -5,7 +5,9 @@ import {
   parseProperties,
   parseEntities,
   detectTypeKeyField,
+  describeDuplicate,
 } from "../src/schema.js";
+import { validateFiles } from "../src/validate.js";
 import { FIXTURES, readMdFiles } from "./helpers.js";
 
 describe("parseProperties", () => {
@@ -162,5 +164,51 @@ describe("loadSchema", () => {
     expect(bookProps.map((p) => p.name).sort()).toEqual(["status", "tags"]);
     const bookStatus = bookProps.find((p) => p.name === "status")!;
     expect(bookStatus.required).toBe(false);
+  });
+});
+
+describe("duplicate schema names", () => {
+  const prop = (path: string, type: string) => ({ path, content: `---\nproperty_name: with\nproperty_type: ${type}\n---\n` });
+  const ent = (path: string, extra: string) => ({ path, content: `---\nentity_name: day\nproperties:\n  ${extra}: {}\n---\n` });
+
+  test("a property defined twice is reported; the first path wins", () => {
+    const schema = loadSchema([], [prop("properties/knowledge/with_property.md", "string"), prop("properties/day_tracking/with_property.md", "list")]);
+    expect(schema.duplicates).toEqual([
+      { kind: "property", name: "with", paths: ["properties/day_tracking/with_property.md", "properties/knowledge/with_property.md"] },
+    ]);
+    expect(schema.properties.filter((p) => p.name === "with").map((p) => p.property_type)).toEqual(["list"]);
+  });
+
+  test("the result does not depend on file order", () => {
+    const a = prop("properties/a/with_property.md", "list");
+    const b = prop("properties/b/with_property.md", "string");
+    const forward = loadSchema([], [a, b]);
+    const backward = loadSchema([], [b, a]);
+    expect(backward.duplicates).toEqual(forward.duplicates);
+    expect(backward.properties[0].property_type).toBe("list");
+  });
+
+  test("an entity defined twice is reported; the first path's properties are used", () => {
+    const schema = loadSchema([ent("entities/z/day_entity.md", "mood"), ent("entities/a/day_entity.md", "date")], []);
+    expect(schema.duplicates).toEqual([{ kind: "entity", name: "day", paths: ["entities/a/day_entity.md", "entities/z/day_entity.md"] }]);
+    expect(schema.entities.length).toBe(1);
+    expect(schema.entityMap.get("day")!.map((p) => p.name)).toEqual(["date"]);
+  });
+
+  test("describeDuplicate names the used and the ignored notes", () => {
+    expect(describeDuplicate({ kind: "property", name: "with", paths: ["a.md", "b.md", "c.md"] })).toBe(
+      'property "with" is defined 3 times; using a.md, ignoring b.md, c.md',
+    );
+  });
+
+  test("a schema without duplicates reports none, and the summary carries none", () => {
+    const schema = loadSchema([], [prop("properties/with_property.md", "list")]);
+    expect(schema.duplicates).toEqual([]);
+    expect(validateFiles([], schema).schemaDuplicates).toBeUndefined();
+  });
+
+  test("the summary carries the schema's duplicates", () => {
+    const schema = loadSchema([], [prop("p/a.md", "list"), prop("p/b.md", "list")]);
+    expect(validateFiles([], schema).schemaDuplicates).toEqual(schema.duplicates);
   });
 });

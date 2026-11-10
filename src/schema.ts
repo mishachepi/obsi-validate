@@ -8,6 +8,7 @@ import type {
   EntitySchema,
   EntityPropertyConfig,
   ResolvedProperty,
+  SchemaDuplicate,
   VaultSchema,
 } from "./types.js";
 
@@ -173,13 +174,36 @@ export function resolveTypeKeyField(schema: VaultSchema, explicit?: string): str
   return explicit?.trim() || detectTypeKeyField(schema) || DEFAULT_TYPE_KEY_FIELD;
 }
 
+/** Keep one definition per name: the one with the first path. Every name
+ * defined more than once is reported. Sorting by path makes the result the
+ * same whatever order the files were read in (CLI walk or Obsidian vault). */
+function dedupeByName<T extends { name: string; sourcePath?: string }>(
+  items: T[],
+  kind: SchemaDuplicate["kind"],
+): { kept: T[]; duplicates: SchemaDuplicate[] } {
+  const byName = new Map<string, T[]>();
+  for (const item of items) {
+    const group = byName.get(item.name);
+    if (group) group.push(item);
+    else byName.set(item.name, [item]);
+  }
+  const kept: T[] = [];
+  const duplicates: SchemaDuplicate[] = [];
+  for (const [name, group] of byName) {
+    group.sort((a, b) => (a.sourcePath ?? "").localeCompare(b.sourcePath ?? ""));
+    kept.push(group[0]);
+    if (group.length > 1) duplicates.push({ kind, name, paths: group.map((i) => i.sourcePath ?? "") });
+  }
+  return { kept, duplicates };
+}
+
 /** Build complete VaultSchema from raw file contents */
 export function loadSchema(
   entityFiles: RawFile[],
   propertyFiles: RawFile[],
 ): VaultSchema {
-  const entities = parseEntities(entityFiles);
-  const properties = parseProperties(propertyFiles);
+  const { kept: entities, duplicates: entityDuplicates } = dedupeByName(parseEntities(entityFiles), "entity");
+  const { kept: properties, duplicates: propertyDuplicates } = dedupeByName(parseProperties(propertyFiles), "property");
 
   const propByName = new Map(properties.map((p) => [p.name, p]));
   const inheritance = resolveInheritance(entities);
@@ -212,7 +236,14 @@ export function loadSchema(
     allowExtraMap,
     propertyPatternMap,
     expectedFolderMap,
+    duplicates: [...entityDuplicates, ...propertyDuplicates],
   };
+}
+
+/** One readable line per duplicate, for CLI output and plugin notices. */
+export function describeDuplicate(d: SchemaDuplicate): string {
+  const [used, ...ignored] = d.paths;
+  return `${d.kind} "${d.name}" is defined ${d.paths.length} times; using ${used}, ignoring ${ignored.join(", ")}`;
 }
 
 /** Build a Zod validator for a single property based on its schema */

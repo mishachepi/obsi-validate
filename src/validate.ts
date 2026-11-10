@@ -278,14 +278,16 @@ export function countResult(summary: Omit<ValidationSummary, "results">, result:
   else summary.invalid++;
 }
 
-/** A summary with nothing counted yet. */
-export function emptySummary(): ValidationSummary {
-  return { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
+/** A summary with nothing counted yet; carries the schema's duplicates when it has any. */
+export function emptySummary(schema?: VaultSchema): ValidationSummary {
+  const summary: ValidationSummary = { total: 0, valid: 0, invalid: 0, skipped: 0, results: [] };
+  if (schema?.duplicates.length) summary.schemaDuplicates = schema.duplicates;
+  return summary;
 }
 
 /** Validate many files; every result is kept. */
 export function validateFiles(files: RawFile[], schema: VaultSchema, options?: ValidateOptions): ValidationSummary {
-  const summary = emptySummary();
+  const summary = emptySummary(schema);
   for (const file of files) {
     const result = validateFile(file, schema, options);
     countResult(summary, result);

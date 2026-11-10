@@ -2,6 +2,7 @@ import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_VAULT_RESULTS } from "./plugin-settings";
 import type { ValidationResult, ValidationSummary } from "./types";
 import { fieldLabel } from "./values";
+import { describeDuplicate } from "./schema";
 import type ObsiValidatePlugin from "./plugin-main";
 
 export class VaultResultsView extends ItemView {
@@ -59,6 +60,14 @@ export class VaultResultsView extends ItemView {
     stats.createSpan({ text: ` | Valid: ${summary.valid}`, cls: "obsi-validate-valid" });
     stats.createSpan({ text: ` | Invalid: ${summary.invalid}`, cls: "obsi-validate-invalid" });
     stats.createSpan({ text: ` | Skipped: ${summary.skipped}` });
+
+    if (summary.schemaDuplicates?.length) {
+      const schemaBox = container.createDiv({ cls: "obsi-validate-schema-issues" });
+      schemaBox.createEl("h5", { text: "Schema" });
+      for (const d of summary.schemaDuplicates) {
+        schemaBox.createDiv({ text: `\u26A0 ${describeDuplicate(d)}`, cls: "obsi-validate-warning" });
+      }
+    }
 
     // Filter: only show files with issues
     const withIssues = summary.results.filter(
